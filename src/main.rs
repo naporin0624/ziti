@@ -30,7 +30,9 @@ fn run() -> Result<()> {
             // intentional duplicate: keeps handle_song self-contained for the one-shot path
             let text = format::render(&cli.format, &song);
             if dedup.is_new(&text) {
-                handle_song(&cli, &song)?;
+                if let Err(err) = handle_song(&cli, &song) {
+                    output::print_error(&format!("{err:#}"));
+                }
             }
             Ok(())
         };
@@ -47,7 +49,7 @@ fn run() -> Result<()> {
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("\u{1b}[31m\u{2717}\u{1b}[0m {err:#}");
+        output::print_error(&format!("{err:#}"));
         std::process::exit(1);
     }
 }

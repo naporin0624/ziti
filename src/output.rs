@@ -37,6 +37,22 @@ fn green(s: &str) -> String {
     }
 }
 
+fn red(s: &str) -> String {
+    if color_enabled() {
+        format!("\u{1b}[31m{s}\u{1b}[0m")
+    } else {
+        s.to_string()
+    }
+}
+
+pub fn error_line(message: &str) -> String {
+    format!("\u{2717} {message}")
+}
+
+pub fn print_error(message: &str) {
+    eprintln!("{}", red(&error_line(message)));
+}
+
 pub fn print_recognized(song: &Song) {
     let hms = Local::now().format("%H:%M:%S").to_string();
     let block = recognized_lines(&hms, song);
@@ -89,5 +105,10 @@ mod tests {
         let out = sent_line("127.0.0.1", 9100, "/cannelloni/search", true);
         assert!(out.contains("(dry-run)"));
         assert!(!out.contains("\u{2713}"));
+    }
+
+    #[test]
+    fn error_line_has_cross_marker() {
+        assert_eq!(error_line("boom"), "\u{2717} boom");
     }
 }

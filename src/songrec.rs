@@ -54,6 +54,7 @@ pub fn recognize_once(device: Option<&str>, interval: u64) -> Result<Option<Song
             break;
         }
     }
+    let _ = child.kill();
     let _ = child.wait();
     Ok(song)
 }
@@ -70,7 +71,7 @@ pub fn stream_listen(
         .context("failed to run `songrec` — is it installed and on PATH?")?;
     let stdout = child.stdout.take().expect("stdout was piped");
     for line in BufReader::new(stdout).lines() {
-        let line = line?;
+        let Ok(line) = line else { continue };
         if let Some(song) = parse_song_json(&line) {
             on_song(song)?;
         }
@@ -115,5 +116,16 @@ mod tests {
     fn args_omit_device_when_absent() {
         let args = recognize_args("recognize", None, 10);
         assert_eq!(args, vec!["recognize", "-j", "-i", "10"]);
+    }
+
+    #[test]
+    fn missing_title_or_subtitle_is_none() {
+        assert!(parse_song_json(r#"{"track":{"title":"X"}}"#).is_none());
+        assert!(parse_song_json(r#"{"track":{"subtitle":"Y"}}"#).is_none());
+    }
+
+    #[test]
+    fn non_string_fields_are_none() {
+        assert!(parse_song_json(r#"{"track":{"title":1,"subtitle":2}}"#).is_none());
     }
 }
