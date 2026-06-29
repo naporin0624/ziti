@@ -1,0 +1,23 @@
+[package]
+name = "songrec-osc"
+version = "0.1.0"
+edition = "2021"
+description = "Recognize the playing song via songrec and forward it as an OSC string"
+
+[[bin]]
+name = "songrec-osc"
+path = "src/main.rs"
+
+[lib]
+name = "songrec_osc"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rosc = "0.10"
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+anyhow = "1"
+
+[dev-dependencies]
+rusty-hook = "0.11"
