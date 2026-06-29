@@ -1,0 +1,906 @@
+# songrec-osc Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a Rust CLI that recognizes the currently playing song via the `songrec` binary and forwards `"artist - title"` as an OSC string message to a configurable host/port/address (default `udp://127.0.0.1:9100` `/cannelloni/search`).
+
+**Architecture:** The CLI shells out to the installed `songrec` binary with `-j` (compact single-line JSON, one object per recognized song) and parses `track.title` / `track.subtitle`. One-shot mode uses `songrec recognize -j` (prints one line, exits); watch mode streams `songrec listen -j`. Recognized songs are rendered through a template and sent as a single OSC string argument over UDP.
+
+**Tech Stack:** Rust (edition 2021), `clap` v4 (derive), `rosc` (OSC encode), `serde_json` (parse songrec output), `chrono` (log timestamps), `anyhow` (errors); `rusty-hook` for git hooks.
+
+## Global Constraints
+
+- Crate name `songrec-osc`; binary `[[bin]] name = "songrec-osc"` (`src/main.rs`); library `[lib] name = "songrec_osc"` (`src/lib.rs`).
+- edition = "2021".
+- Every function single-responsibility (CLAUDE.md). Comments only for what code cannot show; no historical/context comments.
+- songrec JSON field mapping is fixed: artist = `json["track"]["subtitle"]`, title = `json["track"]["title"]`. Absence of `track.title` or `track.subtitle` ⇒ no-match.
+- OSC message carries exactly ONE argument of OSC `string` type (the rendered text).
+- Default OSC target: host `127.0.0.1`, port `9100`, address `/cannelloni/search`. Default format template `{artist} - {title}`.
+- Quality gate is `rusty-hook` (the CLAUDE.md "husky" requirement, Rust-native equivalent, matching ref repo `naporin0624/bucatini`): pre-commit `cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings`; pre-push `cargo test`.
+- All code must pass `cargo fmt --all -- --check` and `cargo clippy --all-targets -- -D warnings`.
+
+---
+
+### Task 1: Project scaffold and tooling
+
+**Files:**
+- Create: `Cargo.toml`
+- Create: `src/lib.rs`
+- Create: `src/main.rs`
+- Create: `.rusty-hook.toml`
+- Create: `.github/workflows/ci.yml`
+- Modify: `.gitignore` (track `Cargo.lock`; binary crate)
+
+**Interfaces:**
+- Produces: a compiling crate exposing an (initially empty) library `songrec_osc` and a `songrec-osc` binary that prints nothing meaningful yet.
+
+- [ ] **Step 1: Write `Cargo.toml`**
+
+```toml
+[package]
+name = "songrec-osc"
+version = "0.1.0"
+edition = "2021"
+description = "Recognize the playing song via songrec and forward it as an OSC string"
+
+[[bin]]
+name = "songrec-osc"
+path = "src/main.rs"
+
+[lib]
+name = "songrec_osc"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rosc = "0.10"
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+anyhow = "1"
+
+[dev-dependencies]
+rusty-hook = "0.11"
+```
+
+- [ ] **Step 2: Write minimal `src/lib.rs`**
+
+```rust
+pub mod cli;
+pub mod format;
+pub mod osc;
+pub mod output;
+pub mod song;
+pub mod songrec;
+```
+
+Create empty placeholder module files so the crate compiles:
+
+`src/cli.rs`, `src/format.rs`, `src/osc.rs`, `src/output.rs`, `src/song.rs`, `src/songrec.rs` — each containing only a doc-less `// placeholder` line for now (later tasks fill them). Each must at least be an empty valid module (an empty file is valid).
+
+- [ ] **Step 3: Write minimal `src/main.rs`**
+
+```rust
+fn main() {
+    println!("songrec-osc");
+}
+```
+
+- [ ] **Step 4: Write `.rusty-hook.toml`**
+
+```toml
+[hooks]
+pre-commit = "cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings"
+pre-push = "cargo test"
+
+[logging]
+verbose = true
+```
+
+- [ ] **Step 5: Write `.github/workflows/ci.yml`**
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format check
+        run: cargo fmt --all -- --check
+```
+
+- [ ] **Step 6: Fix `.gitignore`**
+
+Replace contents with just:
+
+```
+/target
+```
+
+(Binary crates commit `Cargo.lock`.)
+
+- [ ] **Step 7: Build and verify**
+
+Run: `cargo build && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test`
+Expected: builds clean, no fmt diff, no clippy warnings, `test result: ok. 0 passed`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add Cargo.toml Cargo.lock src .rusty-hook.toml .github/workflows/ci.yml .gitignore
+git commit -m "chore: scaffold songrec-osc crate with rusty-hook + CI"
+```
+
+---
+
+### Task 2: `Song` type and `Deduplicator`
+
+**Files:**
+- Modify: `src/song.rs`
+
+**Interfaces:**
+- Produces:
+  - `pub struct Song { pub artist: String, pub title: String }` deriving `Debug, Clone, PartialEq, Eq`.
+  - `pub struct Deduplicator` with `pub fn new() -> Self` and `pub fn is_new(&mut self, key: &str) -> bool` — returns `true` the first time and whenever `key` differs from the previously accepted key; `false` for an immediate repeat. Keyed on the rendered string, not on `Song` (the active `--format` decides identity).
+
+- [ ] **Step 1: Write the failing tests**
+
+Replace `src/song.rs` with:
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Song {
+    pub artist: String,
+    pub title: String,
+}
+
+/// Suppresses consecutive identical OSC sends. Keyed on the rendered string so
+/// that two distinct tracks collapsing to the same text under the active
+/// `--format` are still treated as one.
+pub struct Deduplicator {
+    last: Option<String>,
+}
+
+impl Deduplicator {
+    pub fn new() -> Self {
+        Deduplicator { last: None }
+    }
+
+    pub fn is_new(&mut self, key: &str) -> bool {
+        if self.last.as_deref() == Some(key) {
+            return false;
+        }
+        self.last = Some(key.to_string());
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_key_is_new() {
+        let mut d = Deduplicator::new();
+        assert!(d.is_new("A - B"));
+    }
+
+    #[test]
+    fn immediate_repeat_is_not_new() {
+        let mut d = Deduplicator::new();
+        d.is_new("A - B");
+        assert!(!d.is_new("A - B"));
+    }
+
+    #[test]
+    fn changed_key_is_new_again() {
+        let mut d = Deduplicator::new();
+        d.is_new("A - B");
+        assert!(d.is_new("C - D"));
+    }
+
+    #[test]
+    fn same_key_after_change_is_new() {
+        let mut d = Deduplicator::new();
+        d.is_new("A - B");
+        d.is_new("C - D");
+        assert!(d.is_new("A - B"));
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they pass**
+
+The implementation is written alongside the tests above (the type is trivial; TDD's red step here is the compile-check). Run: `cargo test song::`
+Expected: 4 tests pass.
+
+- [ ] **Step 3: Lint**
+
+Run: `cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings`
+Expected: clean.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/song.rs
+git commit -m "feat: add Song type and Deduplicator"
+```
+
+---
+
+### Task 3: Template rendering (`format.rs`)
+
+**Files:**
+- Modify: `src/format.rs`
+
+**Interfaces:**
+- Consumes: `crate::song::Song`.
+- Produces: `pub fn render(template: &str, song: &Song) -> String` — replaces `{artist}` with `song.artist` and `{title}` with `song.title`; any other text (including unknown `{tokens}`) is left verbatim.
+
+- [ ] **Step 1: Write the failing test**
+
+Replace `src/format.rs` with the tests first:
+
+```rust
+use crate::song::Song;
+
+pub fn render(template: &str, song: &Song) -> String {
+    todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song() -> Song {
+        Song { artist: "Mirin Sheeno".into(), title: "Harmony".into() }
+    }
+
+    #[test]
+    fn default_template() {
+        assert_eq!(render("{artist} - {title}", &song()), "Mirin Sheeno - Harmony");
+    }
+
+    #[test]
+    fn title_only() {
+        assert_eq!(render("{title}", &song()), "Harmony");
+    }
+
+    #[test]
+    fn unknown_tokens_left_verbatim() {
+        assert_eq!(render("[{artist}] {unknown}", &song()), "[Mirin Sheeno] {unknown}");
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test format::`
+Expected: panics with `not yet implemented` (todo!).
+
+- [ ] **Step 3: Write minimal implementation**
+
+Replace the `render` body:
+
+```rust
+pub fn render(template: &str, song: &Song) -> String {
+    template
+        .replace("{artist}", &song.artist)
+        .replace("{title}", &song.title)
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cargo test format::`
+Expected: 3 tests pass.
+
+- [ ] **Step 5: Lint and commit**
+
+```bash
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings
+git add src/format.rs
+git commit -m "feat: add format::render template expansion"
+```
+
+---
+
+### Task 4: OSC encode and send (`osc.rs`)
+
+**Files:**
+- Modify: `src/osc.rs`
+
+**Interfaces:**
+- Produces:
+  - `pub fn encode_message(address: &str, value: &str) -> anyhow::Result<Vec<u8>>` — encodes an `OscMessage` with one `OscType::String` argument.
+  - `pub fn send(host: &str, port: u16, address: &str, value: &str) -> anyhow::Result<()>` — binds an ephemeral UDP socket and sends the encoded packet to `host:port`.
+
+- [ ] **Step 1: Write the failing test**
+
+Replace `src/osc.rs` with:
+
+```rust
+use anyhow::Result;
+use rosc::{encoder, OscMessage, OscPacket, OscType};
+use std::net::UdpSocket;
+
+pub fn encode_message(address: &str, value: &str) -> Result<Vec<u8>> {
+    let packet = OscPacket::Message(OscMessage {
+        addr: address.to_string(),
+        args: vec![OscType::String(value.to_string())],
+    });
+    Ok(encoder::encode(&packet)?)
+}
+
+pub fn send(host: &str, port: u16, address: &str, value: &str) -> Result<()> {
+    let buf = encode_message(address, value)?;
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    socket.send_to(&buf, (host, port))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rosc::decoder;
+
+    #[test]
+    fn encodes_single_string_arg() {
+        let buf = encode_message("/cannelloni/search", "Mirin Sheeno - Harmony").unwrap();
+        let (_rest, packet) = decoder::decode_udp(&buf).unwrap();
+        match packet {
+            OscPacket::Message(m) => {
+                assert_eq!(m.addr, "/cannelloni/search");
+                assert_eq!(m.args, vec![OscType::String("Mirin Sheeno - Harmony".into())]);
+            }
+            _ => panic!("expected a message"),
+        }
+    }
+
+    #[test]
+    fn send_delivers_over_udp() {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = receiver.local_addr().unwrap();
+
+        send("127.0.0.1", addr.port(), "/cannelloni/search", "hello").unwrap();
+
+        let mut buf = [0u8; 1024];
+        let (n, _src) = receiver.recv_from(&mut buf).unwrap();
+        let (_rest, packet) = decoder::decode_udp(&buf[..n]).unwrap();
+        match packet {
+            OscPacket::Message(m) => {
+                assert_eq!(m.addr, "/cannelloni/search");
+                assert_eq!(m.args, vec![OscType::String("hello".into())]);
+            }
+            _ => panic!("expected a message"),
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they pass**
+
+Run: `cargo test osc::`
+Expected: 2 tests pass. (If `decode_udp` is missing, the pinned `rosc = "0.10"` provides it; do not downgrade further.)
+
+- [ ] **Step 3: Lint and commit**
+
+```bash
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings
+git add src/osc.rs Cargo.lock
+git commit -m "feat: add OSC encode + UDP send"
+```
+
+---
+
+### Task 5: Parse songrec JSON and process control (`songrec.rs`)
+
+**Files:**
+- Modify: `src/songrec.rs`
+
+**Interfaces:**
+- Consumes: `crate::song::Song`.
+- Produces:
+  - `pub fn parse_song_json(line: &str) -> Option<Song>` — parses one compact JSON line; returns `Some(Song)` when both `track.title` and `track.subtitle` are strings, else `None`.
+  - `pub fn list_devices() -> anyhow::Result<()>` — runs `songrec recognize -l`, inheriting stdio.
+  - `pub fn recognize_once(device: Option<&str>, interval: u64) -> anyhow::Result<Option<Song>>` — runs `songrec recognize -j [-d device] -i interval`, returns the first parsed song (or `None` if it produced none).
+  - `pub fn stream_listen(device: Option<&str>, interval: u64, on_song: &mut dyn FnMut(Song) -> anyhow::Result<()>) -> anyhow::Result<()>` — runs `songrec listen -j [...]`, calling `on_song` for each parsed song line.
+
+Only `parse_song_json` is unit-tested (it is the pure logic). The process-spawning functions are verified in Task 8's manual integration step, since they require the real `songrec` binary and live audio.
+
+- [ ] **Step 1: Write the failing test**
+
+Replace `src/songrec.rs` with:
+
+```rust
+use crate::song::Song;
+use anyhow::{Context, Result};
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+
+pub fn parse_song_json(line: &str) -> Option<Song> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let title = value["track"]["title"].as_str()?;
+    let artist = value["track"]["subtitle"].as_str()?;
+    Some(Song { artist: artist.to_string(), title: title.to_string() })
+}
+
+fn recognize_args<'a>(sub: &'a str, device: Option<&'a str>, interval: u64) -> Vec<String> {
+    let mut args = vec![sub.to_string(), "-j".to_string(), "-i".to_string(), interval.to_string()];
+    if let Some(dev) = device {
+        args.push("-d".to_string());
+        args.push(dev.to_string());
+    }
+    args
+}
+
+pub fn list_devices() -> Result<()> {
+    let status = Command::new("songrec")
+        .args(["recognize", "-l"])
+        .status()
+        .context("failed to run `songrec` — is it installed and on PATH?")?;
+    anyhow::ensure!(status.success(), "songrec exited with failure while listing devices");
+    Ok(())
+}
+
+pub fn recognize_once(device: Option<&str>, interval: u64) -> Result<Option<Song>> {
+    let mut child = Command::new("songrec")
+        .args(recognize_args("recognize", device, interval))
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("failed to run `songrec` — is it installed and on PATH?")?;
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let mut song = None;
+    for line in BufReader::new(stdout).lines() {
+        let line = line?;
+        if let Some(parsed) = parse_song_json(&line) {
+            song = Some(parsed);
+            break;
+        }
+    }
+    let _ = child.wait();
+    Ok(song)
+}
+
+pub fn stream_listen(
+    device: Option<&str>,
+    interval: u64,
+    on_song: &mut dyn FnMut(Song) -> Result<()>,
+) -> Result<()> {
+    let mut child = Command::new("songrec")
+        .args(recognize_args("listen", device, interval))
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("failed to run `songrec` — is it installed and on PATH?")?;
+    let stdout = child.stdout.take().expect("stdout was piped");
+    for line in BufReader::new(stdout).lines() {
+        let line = line?;
+        if let Some(song) = parse_song_json(&line) {
+            on_song(song)?;
+        }
+    }
+    let _ = child.wait();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MATCH: &str = r#"{"matches":[{"id":"1"}],"timestamp":1700000000,"track":{"key":"123","title":"Harmony","subtitle":"Mirin Sheeno","images":{"coverart":"https://x"}}}"#;
+
+    #[test]
+    fn parses_artist_and_title() {
+        let song = parse_song_json(MATCH).unwrap();
+        assert_eq!(song.artist, "Mirin Sheeno");
+        assert_eq!(song.title, "Harmony");
+    }
+
+    #[test]
+    fn no_track_is_none() {
+        assert!(parse_song_json(r#"{"matches":[],"timestamp":1700000000}"#).is_none());
+    }
+
+    #[test]
+    fn invalid_json_is_none() {
+        assert!(parse_song_json("not json").is_none());
+    }
+
+    #[test]
+    fn args_include_device_when_present() {
+        let args = recognize_args("listen", Some("coreaudio:UID"), 12);
+        assert_eq!(args, vec!["listen", "-j", "-i", "12", "-d", "coreaudio:UID"]);
+    }
+
+    #[test]
+    fn args_omit_device_when_absent() {
+        let args = recognize_args("recognize", None, 10);
+        assert_eq!(args, vec!["recognize", "-j", "-i", "10"]);
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they pass**
+
+Run: `cargo test songrec::`
+Expected: 5 tests pass.
+
+- [ ] **Step 3: Lint and commit**
+
+```bash
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings
+git add src/songrec.rs
+git commit -m "feat: add songrec JSON parsing and process control"
+```
+
+---
+
+### Task 6: Terminal output (`output.rs`)
+
+**Files:**
+- Modify: `src/output.rs`
+
+**Interfaces:**
+- Consumes: `crate::song::Song`.
+- Produces:
+  - `pub fn recognized_lines(now_hms: &str, song: &Song) -> String` — pure two-line plain-text block for a recognized song.
+  - `pub fn sent_line(host: &str, port: u16, address: &str, dry_run: bool) -> String` — pure single plain-text line for the send result.
+  - `pub fn print_recognized(song: &Song)` — prints `recognized_lines` with a live `HH:MM:SS` timestamp, colorizing when stdout is a TTY and `NO_COLOR` is unset.
+  - `pub fn print_sent(host: &str, port: u16, address: &str, dry_run: bool)` — prints `sent_line`, colorized as above.
+
+Color is decoration only; the symbols (`♪`, `✓`, `→`) carry the meaning so monochrome/`NO_COLOR`/piped output stays unambiguous (WCAG: never rely on color alone). The pure `*_lines`/`*_line` functions (no color, timestamp injected) are what the tests pin.
+
+- [ ] **Step 1: Write the failing test**
+
+Replace `src/output.rs` with:
+
+```rust
+use crate::song::Song;
+use chrono::Local;
+use std::io::IsTerminal;
+
+pub fn recognized_lines(now_hms: &str, song: &Song) -> String {
+    format!(
+        "[{}] \u{266a} recognized\n           {} - {}",
+        now_hms, song.artist, song.title
+    )
+}
+
+pub fn sent_line(host: &str, port: u16, address: &str, dry_run: bool) -> String {
+    if dry_run {
+        format!("   \u{2192} (dry-run) would send OSC udp://{host}:{port} {address}")
+    } else {
+        format!("   \u{2192} \u{2713} OSC udp://{host}:{port} {address}")
+    }
+}
+
+fn color_enabled() -> bool {
+    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+fn dim(s: &str) -> String {
+    if color_enabled() {
+        format!("\u{1b}[2m{s}\u{1b}[0m")
+    } else {
+        s.to_string()
+    }
+}
+
+fn green(s: &str) -> String {
+    if color_enabled() {
+        format!("\u{1b}[32m{s}\u{1b}[0m")
+    } else {
+        s.to_string()
+    }
+}
+
+pub fn print_recognized(song: &Song) {
+    let hms = Local::now().format("%H:%M:%S").to_string();
+    let block = recognized_lines(&hms, song);
+    match block.split_once('\n') {
+        Some((head, body)) => println!("{}\n{}", dim(head), body),
+        None => println!("{block}"),
+    }
+}
+
+pub fn print_sent(host: &str, port: u16, address: &str, dry_run: bool) {
+    let line = sent_line(host, port, address, dry_run);
+    if dry_run {
+        println!("{}", dim(&line));
+    } else {
+        println!("{}", green(&line));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song() -> Song {
+        Song { artist: "Mirin Sheeno".into(), title: "Harmony".into() }
+    }
+
+    #[test]
+    fn recognized_is_two_lines_with_marker() {
+        let out = recognized_lines("12:30:34", &song());
+        assert_eq!(out, "[12:30:34] \u{266a} recognized\n           Mirin Sheeno - Harmony");
+    }
+
+    #[test]
+    fn sent_line_shows_check_and_target() {
+        let out = sent_line("127.0.0.1", 9100, "/cannelloni/search", false);
+        assert_eq!(out, "   \u{2192} \u{2713} OSC udp://127.0.0.1:9100 /cannelloni/search");
+    }
+
+    #[test]
+    fn sent_line_dry_run_is_marked() {
+        let out = sent_line("127.0.0.1", 9100, "/cannelloni/search", true);
+        assert!(out.contains("(dry-run)"));
+        assert!(!out.contains("\u{2713}"));
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they pass**
+
+Run: `cargo test output::`
+Expected: 3 tests pass.
+
+- [ ] **Step 3: Lint and commit**
+
+```bash
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings
+git add src/output.rs
+git commit -m "feat: add two-line rich terminal output"
+```
+
+---
+
+### Task 7: CLI argument definition (`cli.rs`)
+
+**Files:**
+- Modify: `src/cli.rs`
+
+**Interfaces:**
+- Produces: `pub struct Cli` (derives `clap::Parser`) with fields:
+  - `list: bool` (`-l`/`--list`)
+  - `device: Option<String>` (`-d`/`--device`)
+  - `watch: bool` (`--watch`)
+  - `interval: u64` (`-i`/`--interval`, default `10`)
+  - `format: String` (`--format`, default `{artist} - {title}`)
+  - `osc_host: String` (`--osc-host`, default `127.0.0.1`)
+  - `osc_port: u16` (`--osc-port`, default `9100`)
+  - `osc_address: String` (`--osc-address`, default `/cannelloni/search`)
+  - `dry_run: bool` (`--dry-run`)
+
+- [ ] **Step 1: Write the implementation with tests**
+
+Replace `src/cli.rs` with:
+
+```rust
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(about = "Recognize the playing song via songrec and send it as an OSC string")]
+pub struct Cli {
+    /// List available audio devices and exit
+    #[arg(short = 'l', long)]
+    pub list: bool,
+
+    /// Audio device to capture from (passed to songrec -d)
+    #[arg(short = 'd', long)]
+    pub device: Option<String>,
+
+    /// Keep listening and send on every newly recognized song
+    #[arg(long)]
+    pub watch: bool,
+
+    /// Seconds between Shazam requests (passed to songrec -i)
+    #[arg(short = 'i', long, default_value_t = 10)]
+    pub interval: u64,
+
+    /// Template for the sent string; supports {artist} and {title}
+    #[arg(long, default_value = "{artist} - {title}")]
+    pub format: String,
+
+    /// OSC destination host
+    #[arg(long = "osc-host", default_value = "127.0.0.1")]
+    pub osc_host: String,
+
+    /// OSC destination port
+    #[arg(long = "osc-port", default_value_t = 9100)]
+    pub osc_port: u16,
+
+    /// OSC address pattern
+    #[arg(long = "osc-address", default_value = "/cannelloni/search")]
+    pub osc_address: String,
+
+    /// Print what would be sent without sending OSC
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_match_spec() {
+        let cli = Cli::parse_from(["songrec-osc"]);
+        assert_eq!(cli.interval, 10);
+        assert_eq!(cli.format, "{artist} - {title}");
+        assert_eq!(cli.osc_host, "127.0.0.1");
+        assert_eq!(cli.osc_port, 9100);
+        assert_eq!(cli.osc_address, "/cannelloni/search");
+        assert!(!cli.list && !cli.watch && !cli.dry_run);
+        assert!(cli.device.is_none());
+    }
+
+    #[test]
+    fn parses_overrides() {
+        let cli = Cli::parse_from([
+            "songrec-osc", "--watch", "-d", "dev", "--osc-port", "9000", "--dry-run",
+        ]);
+        assert!(cli.watch);
+        assert_eq!(cli.device.as_deref(), Some("dev"));
+        assert_eq!(cli.osc_port, 9000);
+        assert!(cli.dry_run);
+    }
+
+    #[test]
+    fn verify_clap_config() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they pass**
+
+Run: `cargo test cli::`
+Expected: 3 tests pass.
+
+- [ ] **Step 3: Lint and commit**
+
+```bash
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings
+git add src/cli.rs
+git commit -m "feat: add clap CLI definition"
+```
+
+---
+
+### Task 8: Wire `main.rs` and verify end-to-end
+
+**Files:**
+- Modify: `src/main.rs`
+
+**Interfaces:**
+- Consumes: `songrec_osc::cli::Cli`, `songrec_osc::{songrec, format, osc, output, song::Deduplicator}`.
+- Produces: the runnable binary behavior — `--list`, one-shot, `--watch`, `--dry-run`.
+
+- [ ] **Step 1: Write `src/main.rs`**
+
+```rust
+use anyhow::Result;
+use clap::Parser;
+use songrec_osc::cli::Cli;
+use songrec_osc::song::{Deduplicator, Song};
+use songrec_osc::{format, osc, output, songrec};
+
+fn handle_song(cli: &Cli, song: &Song) -> Result<()> {
+    let text = format::render(&cli.format, song);
+    output::print_recognized(song);
+    if !cli.dry_run {
+        osc::send(&cli.osc_host, cli.osc_port, &cli.osc_address, &text)?;
+    }
+    output::print_sent(&cli.osc_host, cli.osc_port, &cli.osc_address, cli.dry_run);
+    Ok(())
+}
+
+fn run() -> Result<()> {
+    let cli = Cli::parse();
+
+    if cli.list {
+        return songrec::list_devices();
+    }
+
+    let device = cli.device.as_deref();
+
+    if cli.watch {
+        let mut dedup = Deduplicator::new();
+        let mut on_song = |song: Song| -> Result<()> {
+            let text = format::render(&cli.format, &song);
+            if dedup.is_new(&text) {
+                handle_song(&cli, &song)?;
+            }
+            Ok(())
+        };
+        return songrec::stream_listen(device, cli.interval, &mut on_song);
+    }
+
+    match songrec::recognize_once(device, cli.interval)? {
+        Some(song) => handle_song(&cli, &song),
+        None => {
+            anyhow::bail!("no song recognized");
+        }
+    }
+}
+
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("\u{1b}[31m\u{2717}\u{1b}[0m {err:#}");
+        std::process::exit(1);
+    }
+}
+```
+
+Note: `handle_song` and the watch closure both call `format::render`; the watch path renders once for the dedup key and `handle_song` renders again for sending. This duplicate render is intentional and cheap — it keeps `handle_song` self-contained for the one-shot path. If preferred during review, thread the rendered text into `handle_song`; do not extract a shared mutable buffer.
+
+- [ ] **Step 2: Build and run the unit suite**
+
+Run: `cargo build && cargo test`
+Expected: builds clean; all tests from Tasks 2–7 pass.
+
+- [ ] **Step 3: Verify `--list` against the real binary**
+
+Run: `cargo run -- --list`
+Expected: prints songrec's device list (same as `songrec recognize -l`) and exits 0.
+
+- [ ] **Step 4: Verify dry-run one-shot wiring without audio dependence**
+
+Open a terminal listener for OSC, then run dry-run (no packet expected) and a real send test:
+
+```bash
+# Terminal A: tiny UDP listener to confirm a real send (optional manual check)
+# Using `nc -u -l 9100` or a Python one-liner; observe bytes arrive on a real (non --dry-run) run.
+
+# Dry-run must NOT require a listener and must NOT send:
+cargo run -- --dry-run --osc-port 9100
+# Expected (once songrec recognizes audio): two-line recognized block + "→ (dry-run) would send …".
+```
+
+Expected: with audio playing through the selected device, the recognized block prints and the dry-run line shows `(dry-run)`; without `--dry-run`, a UDP packet reaches the listener.
+
+- [ ] **Step 5: Verify watch mode**
+
+Run: `cargo run -- --watch --dry-run -d "<your VB-Cable UID>"`
+Expected: as new songs are recognized, each prints once; an immediately repeated track does not reprint. Ctrl-C stops it.
+
+- [ ] **Step 6: Final lint and commit**
+
+```bash
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
+git add src/main.rs
+git commit -m "feat: wire main with list/one-shot/watch/dry-run"
+```
+
+---
+
+## Self-Review
+
+**Spec coverage:**
+- songrec subprocess + `-j` parsing → Task 5. ✓
+- Module split (main/cli/songrec/song/format/osc/output/lib) → Tasks 1–8. ✓
+- Args `-l/--list`, `-d/--device`, `--watch`, `-i`, `--format`, `--osc-host/port/address`, `--dry-run` → Task 7; behavior → Task 8. ✓
+- dedup = consecutive-identical skip → Task 2 + Task 8 watch path. ✓
+- no-match: one-shot non-zero exit, watch ignore → Task 8 (`anyhow::bail!`; watch only calls back on parsed songs). ✓
+- Output = two-line rich log, color + symbol → Task 6. ✓
+- OSC = UDP, single string arg, configurable address → Task 4 + Task 8. ✓
+- artist=`track.subtitle`, title=`track.title` → Task 5. ✓
+- Quality gate rusty-hook (fmt+clippy / test), CI fmt-check, Cargo.lock tracked → Task 1. ✓
+
+**Placeholder scan:** The only `todo!()` is the deliberate red-step in Task 3, replaced in the same task's Step 3. No "TBD"/"handle edge cases"/etc. ✓
+
+**Type consistency:** `Song { artist, title }`, `Deduplicator::is_new`, `format::render`, `osc::send`/`encode_message`, `songrec::{parse_song_json, list_devices, recognize_once, stream_listen}`, `output::{print_recognized, print_sent, recognized_lines, sent_line}`, `Cli` fields — all names/signatures match across Tasks 2–8. ✓
