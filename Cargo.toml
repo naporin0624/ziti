@@ -1,15 +1,15 @@
 [package]
-name = "songrec-osc"
+name = "ziti"
 version = "0.1.0"
 edition = "2021"
 description = "Recognize the playing song via songrec and forward it as an OSC string"
 
 [[bin]]
-name = "songrec-osc"
+name = "ziti"
 path = "src/main.rs"
 
 [lib]
-name = "songrec_osc"
+name = "ziti"
 path = "src/lib.rs"
 
 [dependencies]

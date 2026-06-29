@@ -30,6 +30,7 @@ fn recognize_args<'a>(sub: &'a str, device: Option<&'a str>, interval: u64) -> V
 pub fn list_devices() -> Result<()> {
     let status = Command::new("songrec")
         .args(["recognize", "-l"])
+        .stderr(Stdio::null())
         .status()
         .context("failed to run `songrec` — is it installed and on PATH?")?;
     anyhow::ensure!(
@@ -43,6 +44,7 @@ pub fn recognize_once(device: Option<&str>, interval: u64) -> Result<Option<Song
     let mut child = Command::new("songrec")
         .args(recognize_args("recognize", device, interval))
         .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .context("failed to run `songrec` — is it installed and on PATH?")?;
     let stdout = child.stdout.take().expect("stdout was piped");
@@ -67,6 +69,7 @@ pub fn stream_listen(
     let mut child = Command::new("songrec")
         .args(recognize_args("listen", device, interval))
         .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .context("failed to run `songrec` — is it installed and on PATH?")?;
     let stdout = child.stdout.take().expect("stdout was piped");

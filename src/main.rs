@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use songrec_osc::cli::Cli;
-use songrec_osc::song::{Deduplicator, Song};
-use songrec_osc::{format, osc, output, songrec};
+use ziti::cli::Cli;
+use ziti::song::{Deduplicator, Song};
+use ziti::{format, osc, output, songrec};
 
 fn handle_song(cli: &Cli, song: &Song) -> Result<()> {
     let text = format::render(&cli.format, song);

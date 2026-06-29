@@ -1,4 +1,4 @@
-# songrec-osc 設計ドキュメント
+# ziti 設計ドキュメント
 
 作成日: 2026-06-30
 
@@ -15,7 +15,7 @@ system audio (VB-Cable 等)
    songrec (subprocess, -j JSON)
         │  Song { artist, title }
         ▼
-   songrec-osc  ──(OSC string)──▶  udp://host:port  /cannelloni/search
+   ziti  ──(OSC string)──▶  udp://host:port  /cannelloni/search
 ```
 
 ## 採用アプローチ: songrec サブプロセス方式
@@ -144,7 +144,7 @@ CI（`.github/workflows/ci.yml`）は安価な Linux ランナーで `cargo fmt 
 
 ## Cargo 構成（bucatini 準拠）
 
-- edition 2021、`[[bin]]` name = `songrec-osc` (path `src/main.rs`)、`[lib]` name = `songrec_osc`。
+- edition 2021、`[[bin]]` name = `ziti` (path `src/main.rs`)、`[lib]` name = `ziti`。
 
 ## スコープ外（YAGNI）
 

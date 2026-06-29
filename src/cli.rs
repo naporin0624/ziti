@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn defaults_match_spec() {
-        let cli = Cli::parse_from(["songrec-osc"]);
+        let cli = Cli::parse_from(["ziti"]);
         assert_eq!(cli.interval, 10);
         assert_eq!(cli.format, "{artist} - {title}");
         assert_eq!(cli.osc_host, "127.0.0.1");
@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn parses_overrides() {
         let cli = Cli::parse_from([
-            "songrec-osc",
+            "ziti",
             "--watch",
             "-d",
             "dev",

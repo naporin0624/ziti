@@ -1,110 +1,121 @@
-# songrec-osc
+# ziti
 
-[songrec](https://github.com/marin-m/SongRec) で認識した「いま流れている曲」を、OSC メッセージとして任意の宛先へ転送する小さな Rust 製 CLI です。
+[日本語版 README](README.ja.md)
+
+A small Rust CLI that recognizes the currently playing song with
+[songrec](https://github.com/marin-m/SongRec) and forwards it as an OSC message
+to any destination.
 
 ```
-system audio (VB-Cable 等)
+system audio (e.g. VB-Cable)
         │
         ▼
    songrec recognize / listen  (-j JSON)
         │   track.subtitle = artist, track.title = title
         ▼
-   songrec-osc  ──(OSC string)──▶  udp://host:port  /cannelloni/search
+   ziti  ──(OSC string)──▶  udp://host:port  /cannelloni/search
 ```
 
-デフォルトでは `"アーティスト - 曲名"` を OSC string 1 引数として `udp://127.0.0.1:9100` の
-アドレス `/cannelloni/search` へ送ります。宛先・アドレス・文字列フォーマットはすべて引数で変更できます。
+By default it sends `"artist - title"` as a single OSC string argument to
+`udp://127.0.0.1:9100` at the address `/cannelloni/search`. The destination,
+address, and string format are all configurable via flags.
 
-## 仕組み
+## How it works
 
-外部の `songrec` バイナリを子プロセスとして起動し、その `-j`（コンパクトな 1 行 JSON）出力を
-パースして曲情報を取り出します。songrec をライブラリとしてリンクする方式は、`soup3`(libsoup) など
-重いネイティブ依存を巻き込むため採用していません。サブプロセス方式なので依存が軽く、songrec 本体は
-GPL ですが、バイナリを呼び出すだけのこの CLI には GPL は伝播しません。
+`ziti` launches the external `songrec` binary as a child process and parses its
+`-j` output (compact single-line JSON) to extract the track. Linking songrec as
+a library would drag in heavy native dependencies such as `soup3` (libsoup), so
+the subprocess approach is used instead: dependencies stay light, and although
+songrec itself is GPL, this CLI only invokes its binary, so GPL does not
+propagate here.
 
-## 必要なもの
+songrec's own log output (the `INFO …` lines it writes to stderr) is suppressed,
+so you only see `ziti`'s own status output.
 
-- Rust ツールチェイン（edition 2021 / rustc 1.70+）
-- `songrec` バイナリが PATH 上にあること
+## Requirements
+
+- A Rust toolchain (edition 2021 / rustc 1.70+)
+- The `songrec` binary on your `PATH`
 
 ```sh
-# 例: macOS で FFmpeg 機能付き・GUI なしでインストール
+# Example: install on macOS with the FFmpeg feature, no GUI
 cargo install songrec --no-default-features --features ffmpeg
 ```
 
-## ビルド
+## Build
 
 ```sh
-# 依存取得 + デバッグビルド（実行ファイル: target/debug/songrec-osc）
+# Fetch dependencies and build (binary: target/debug/ziti)
 cargo build
 
-# 最適化したリリースビルド（実行ファイル: target/release/songrec-osc）
+# Optimized release build (binary: target/release/ziti)
 cargo build --release
 
-# ビルドせず直接実行（引数は -- の後ろに渡す）
+# Run without building a standalone binary (args go after --)
 cargo run -- --list
-cargo run --release -- --watch -d "<デバイス名>"
+cargo run --release -- --watch -d "<device name>"
 ```
 
-ビルドした実行ファイルはそのままコピーして配置できます。
+The built binary is self-contained and can be copied anywhere on your `PATH`:
 
 ```sh
-cp target/release/songrec-osc /usr/local/bin/   # 任意の PATH へ
+cp target/release/ziti /usr/local/bin/
 ```
 
-## インストール
+## Install
 
-`cargo install` で PATH 上に直接インストールすることもできます。
+You can also install it straight onto your `PATH` with cargo:
 
 ```sh
-cargo install --path .       # ~/.cargo/bin/songrec-osc に配置
-# またはローカル実行
-cargo run -- --help
+cargo install --path .    # installs to ~/.cargo/bin/ziti
 ```
 
-## 使い方
+## Usage
 
 ```sh
-# 利用可能なオーディオデバイス一覧を表示して終了
-songrec-osc --list
+# List available audio devices and exit
+ziti --list
 
-# 単発: 1 曲認識して OSC を送ったら終了（曲が見つからなければ非 0 終了）
-songrec-osc
+# One-shot: recognize a single song, send OSC, exit
+# (exits non-zero if nothing is recognized)
+ziti
 
-# 常駐: 新しい曲を認識するたびに送信（直前と同じ曲は送らない）。Ctrl-C で停止
-songrec-osc --watch -d "<デバイス名/UID>"
+# Watch: send on every newly recognized song; an immediate repeat is skipped.
+# Stop with Ctrl-C.
+ziti --watch -d "<device name / UID>"
 
-# 送信せず、送信予定の内容だけ表示
-songrec-osc --dry-run
+# Print what would be sent without sending OSC
+ziti --dry-run
 
-# OSC 宛先・アドレス・フォーマットを変更
-songrec-osc --osc-host 192.168.1.10 --osc-port 9000 \
-            --osc-address /myapp/nowplaying \
-            --format "{title} / {artist}"
+# Change OSC destination, address, and string format
+ziti --osc-host 192.168.1.10 --osc-port 9000 \
+     --osc-address /myapp/nowplaying \
+     --format "{title} / {artist}"
 ```
 
-デバイス名は `--list` の出力から選びます（macOS + VB-Cable の例:
-`coreaudio:com.vbaudio.vbcable:XXXXXXXX-...`）。UID はマシンや再インストールで変わるため、
-固定値を控えるより `--list` で都度確認するのが確実です。
+Pick a device name from the `--list` output (macOS + VB-Cable example:
+`coreaudio:com.vbaudio.vbcable:XXXXXXXX-...`). UIDs change per machine and on
+reinstall, so checking `--list` each time is more robust than hardcoding one.
 
-## オプション
+## Options
 
-| 引数 | 既定値 | 説明 |
-|------|--------|------|
-| `-l, --list` | — | オーディオデバイス一覧を表示して終了 |
-| `-d, --device <NAME>` | システム既定 | 使用する音声デバイス（songrec の `-d` に渡す） |
-| `--watch` | off | 常駐監視。新しい曲ごとに送信（連続同一はスキップ） |
-| `-i, --interval <SEC>` | 10 | Shazam へのリクエスト間隔（songrec の `-i`） |
-| `--format <TMPL>` | `{artist} - {title}` | 送信文字列テンプレート（`{artist}` `{title}` を置換） |
-| `--osc-host <HOST>` | 127.0.0.1 | OSC 送信先ホスト |
-| `--osc-port <PORT>` | 9100 | OSC 送信先ポート |
-| `--osc-address <ADDR>` | /cannelloni/search | OSC アドレスパターン |
-| `--dry-run` | off | OSC を送信せず内容のみ表示 |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-l, --list` | — | List audio devices and exit |
+| `-d, --device <NAME>` | system default | Audio device to use (passed to songrec `-d`) |
+| `--watch` | off | Keep listening; send on every new song (consecutive duplicates skipped) |
+| `-i, --interval <SEC>` | 10 | Seconds between Shazam requests (songrec `-i`) |
+| `--format <TMPL>` | `{artist} - {title}` | Template for the sent string (`{artist}`, `{title}` are substituted) |
+| `--osc-host <HOST>` | 127.0.0.1 | OSC destination host |
+| `--osc-port <PORT>` | 9100 | OSC destination port |
+| `--osc-address <ADDR>` | /cannelloni/search | OSC address pattern |
+| `--dry-run` | off | Print the message instead of sending it |
 
-## 出力
+## Output
 
-認識と送信を 2 行のログで表示します。成功/失敗は色だけでなく記号（♪ ✓ ✗ →）でも示すため、
-`NO_COLOR` 指定時やパイプ経由でも情報が失われません。
+Recognition and sending are shown as a two-line log. Success and failure are
+conveyed with symbols (♪ ✓ ✗ →) as well as color, so no information is lost
+under `NO_COLOR` or when piped.
 
 ```
 [12:30:34] ♪ recognized
@@ -112,29 +123,33 @@ songrec-osc --osc-host 192.168.1.10 --osc-port 9000 \
    → ✓ OSC udp://127.0.0.1:9100 /cannelloni/search
 ```
 
-`--dry-run` のときは送信行が `→ (dry-run) would send …` になります。
+With `--dry-run` the send line becomes `→ (dry-run) would send …`.
 
-## 挙動メモ
+## Behavior notes
 
-- 送る OSC メッセージは **string 型の引数 1 個**（整形済みの曲名）だけです。
-- `--watch` では送信に失敗しても警告を出して監視を継続します（単発モードは失敗で非 0 終了）。
-- 曲の重複判定は「整形後の文字列」で行うため、`--format` を変えると判定単位も変わります。
+- The OSC message carries exactly **one `string` argument** (the formatted text).
+- In `--watch` mode a send failure is logged as a warning and watching
+  continues; one-shot mode exits non-zero on failure.
+- Duplicate detection compares the **formatted string**, so changing `--format`
+  also changes what counts as the same song.
+- songrec's own stderr logging is silenced; only `ziti`'s output is printed.
 
-## 開発
+## Development
 
 ```sh
-cargo test                                   # 全テスト
-cargo fmt --all -- --check                   # フォーマット確認
+cargo test                                   # all tests
+cargo fmt --all -- --check                   # formatting check
 cargo clippy --all-targets -- -D warnings    # lint
 ```
 
-git hook は [rusty-hook](https://github.com/swellaby/rusty-hook) で担保しています
-（`.rusty-hook.toml`）。pre-commit で `fmt --check` + `clippy -D warnings`、pre-push で
-`cargo test` が自動実行されます。
+Git hooks are enforced with [rusty-hook](https://github.com/swellaby/rusty-hook)
+(`.rusty-hook.toml`): pre-commit runs `fmt --check` + `clippy -D warnings`, and
+pre-push runs `cargo test`.
 
-設計と実装計画は `docs/superpowers/` 配下にあります。
+Design and implementation notes live under `docs/superpowers/`.
 
-## ライセンス
+## License
 
-このリポジトリのコードは利用者の方針に従ってください。なお `songrec` 本体は GPL-3.0+ ですが、
-本 CLI は songrec を外部バイナリとして呼び出すのみで、ソースを取り込んでいません。
+Use the code in this repository per your own policy. Note that `songrec` itself
+is GPL-3.0+, but this CLI only invokes songrec as an external binary and does not
+incorporate its source.
