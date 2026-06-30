@@ -27,16 +27,55 @@ fn recognize_args<'a>(sub: &'a str, device: Option<&'a str>, interval: u64) -> V
     args
 }
 
-pub fn list_devices() -> Result<()> {
-    let status = Command::new("songrec")
+pub fn parse_device_line(line: &str) -> Option<crate::song::Device> {
+    const MARKER: &str = "Available device: ";
+    let start = line.find(MARKER)? + MARKER.len();
+    let remainder = line[start..].trim_end();
+    let (id, name) = match remainder.find(" (") {
+        Some(pos) => {
+            let raw_name = remainder[pos + 2..]
+                .strip_suffix(')')
+                .unwrap_or(&remainder[pos + 2..]);
+            (&remainder[..pos], raw_name)
+        }
+        None => (remainder, ""),
+    };
+    let id = id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let name = name
+        .replace(['\u{200e}', '\u{200f}'], "")
+        .trim()
+        .to_string();
+    Some(crate::song::Device {
+        id: id.to_string(),
+        name,
+    })
+}
+
+pub fn parse_device_list(stderr: &str) -> Vec<crate::song::Device> {
+    stderr.lines().filter_map(parse_device_line).collect()
+}
+
+pub fn fetch_devices() -> Result<Vec<crate::song::Device>> {
+    let output = Command::new("songrec")
         .args(["recognize", "-l"])
-        .stderr(Stdio::null())
-        .status()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
         .context("failed to run `songrec` — is it installed and on PATH?")?;
     anyhow::ensure!(
-        status.success(),
+        output.status.success(),
         "songrec exited with failure while listing devices"
     );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Ok(parse_device_list(&stderr))
+}
+
+pub fn list_devices() -> Result<()> {
+    let devices = fetch_devices()?;
+    crate::output::print_devices(&devices);
     Ok(())
 }
 
@@ -130,5 +169,48 @@ mod tests {
     #[test]
     fn non_string_fields_are_none() {
         assert!(parse_song_json(r#"{"track":{"title":1,"subtitle":2}}"#).is_none());
+    }
+
+    #[test]
+    fn parses_full_info_line_with_marks_and_inner_parens() {
+        let line = "[2026-06-30T05:58:02Z INFO songrec::cli_main /x/cli_main.rs:116] Available device: coreaudio:A3E21E5F (\u{200e}napochaaanのマイク (input))";
+        let device = parse_device_line(line).unwrap();
+        assert_eq!(device.id, "coreaudio:A3E21E5F");
+        assert_eq!(device.name, "napochaaanのマイク (input)");
+    }
+
+    #[test]
+    fn parses_aggregate_line() {
+        let line = "[2026-06-30T05:58:02Z INFO songrec::cli_main /x/cli_main.rs:116] Available device: coreaudio:~:AMS2_Aggregate:0 (機器セット)";
+        let device = parse_device_line(line).unwrap();
+        assert_eq!(device.id, "coreaudio:~:AMS2_Aggregate:0");
+        assert_eq!(device.name, "機器セット");
+    }
+
+    #[test]
+    fn line_without_marker_is_none() {
+        assert!(parse_device_line("[INFO] some unrelated log line").is_none());
+    }
+
+    #[test]
+    fn device_without_parenthesized_name_has_empty_name() {
+        let line = "Available device: coreaudio:BareDevice";
+        let device = parse_device_line(line).unwrap();
+        assert_eq!(device.id, "coreaudio:BareDevice");
+        assert_eq!(device.name, "");
+    }
+
+    #[test]
+    fn parse_device_list_collects_multiple_and_skips_noise() {
+        let stderr = "[INFO] starting\n\
+[2026 INFO songrec] Available device: coreaudio:A (\u{200e}マイク)\n\
+unrelated line\n\
+[2026 INFO songrec] Available device: coreaudio:B (機器セット)\n";
+        let devices = parse_device_list(stderr);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "coreaudio:A");
+        assert_eq!(devices[0].name, "マイク");
+        assert_eq!(devices[1].id, "coreaudio:B");
+        assert_eq!(devices[1].name, "機器セット");
     }
 }
