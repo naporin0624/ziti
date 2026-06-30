@@ -3,34 +3,34 @@ use crate::songrec;
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select};
 
-const RUN_LABEL: &str = "▶ 実行";
-const QUIT_LABEL: &str = "終了";
+const RUN_LABEL: &str = "▶ Run";
+const QUIT_LABEL: &str = "Quit";
 
 fn mode_value(mode: Mode) -> &'static str {
     match mode {
-        Mode::Once => "1回認識",
-        Mode::Watch => "監視 (watch)",
+        Mode::Once => "Recognize once",
+        Mode::Watch => "Watch",
     }
 }
 
 fn device_value(device: &Option<String>) -> String {
     match device {
         Some(d) if !d.is_empty() => d.clone(),
-        _ => "(指定なし)".to_string(),
+        _ => "(none)".to_string(),
     }
 }
 
 pub fn menu_items(s: &Settings) -> Vec<String> {
     vec![
         RUN_LABEL.to_string(),
-        format!("モード        {}", mode_value(s.mode)),
-        format!("デバイス      {}", device_value(&s.device)),
-        format!("間隔          {}s", s.interval),
-        format!("フォーマット   {}", s.format),
-        format!("OSC host      {}", s.osc_host),
-        format!("OSC port      {}", s.osc_port),
-        format!("OSC address   {}", s.osc_address),
-        format!("dry-run       {}", if s.dry_run { "on" } else { "off" }),
+        format!("{:<14}{}", "Mode", mode_value(s.mode)),
+        format!("{:<14}{}", "Device", device_value(&s.device)),
+        format!("{:<14}{}", "Interval", format!("{}s", s.interval)),
+        format!("{:<14}{}", "Format", s.format),
+        format!("{:<14}{}", "OSC host", s.osc_host),
+        format!("{:<14}{}", "OSC port", s.osc_port),
+        format!("{:<14}{}", "OSC address", s.osc_address),
+        format!("{:<14}{}", "Dry run", if s.dry_run { "on" } else { "off" }),
         QUIT_LABEL.to_string(),
     ]
 }
@@ -40,7 +40,7 @@ fn edit_mode(current: Mode) -> Result<Mode> {
     let labels = [mode_value(Mode::Once), mode_value(Mode::Watch)];
     let default = if current == Mode::Watch { 1 } else { 0 };
     let idx = Select::new()
-        .with_prompt("モード")
+        .with_prompt("Mode")
         .items(&labels)
         .default(default)
         .interact()?;
@@ -51,11 +51,11 @@ fn edit_device(current: Option<String>) -> Result<Option<String>> {
     let devices = match songrec::fetch_devices() {
         Ok(d) => d,
         Err(err) => {
-            eprintln!("デバイス一覧を取得できませんでした: {err:#}");
+            eprintln!("Could not list devices: {err:#}");
             Vec::new()
         }
     };
-    let mut labels: Vec<String> = vec!["(指定なし / songrec デフォルト)".to_string()];
+    let mut labels: Vec<String> = vec!["(none / songrec default)".to_string()];
     for d in &devices {
         if d.name.is_empty() {
             labels.push(d.id.clone());
@@ -63,10 +63,10 @@ fn edit_device(current: Option<String>) -> Result<Option<String>> {
             labels.push(format!("{} ({})", d.name, d.id));
         }
     }
-    labels.push("手入力…".to_string());
+    labels.push("Enter manually…".to_string());
 
     let idx = Select::new()
-        .with_prompt("デバイス")
+        .with_prompt("Device")
         .items(&labels)
         .default(0)
         .interact()?;
@@ -75,7 +75,7 @@ fn edit_device(current: Option<String>) -> Result<Option<String>> {
         Ok(None)
     } else if idx == labels.len() - 1 {
         let entered: String = Input::new()
-            .with_prompt("デバイス ID")
+            .with_prompt("Device ID")
             .allow_empty(true)
             .with_initial_text(current.unwrap_or_default())
             .interact_text()?;
@@ -91,7 +91,7 @@ fn edit_device(current: Option<String>) -> Result<Option<String>> {
 
 fn edit_interval(current: u64) -> Result<u64> {
     Ok(Input::<u64>::new()
-        .with_prompt("認識間隔（秒）")
+        .with_prompt("Interval (seconds)")
         .with_initial_text(current.to_string())
         .interact_text()?)
 }
@@ -112,7 +112,7 @@ fn edit_text(prompt: &str, current: &str) -> Result<String> {
 
 fn edit_dry_run(current: bool) -> Result<bool> {
     Ok(Confirm::new()
-        .with_prompt("dry-run（送信せず表示のみ）")
+        .with_prompt("Dry run (print only, don't send)")
         .default(current)
         .interact()?)
 }
@@ -121,7 +121,7 @@ pub fn run(mut settings: Settings) -> Result<Option<Settings>> {
     loop {
         let items = menu_items(&settings);
         let choice = Select::new()
-            .with_prompt("ziti — 項目を選んで編集、▶ 実行で開始")
+            .with_prompt("ziti — select a field to edit, ▶ Run to start")
             .items(&items)
             .default(0)
             .interact()?;
@@ -130,7 +130,7 @@ pub fn run(mut settings: Settings) -> Result<Option<Settings>> {
             1 => settings.mode = edit_mode(settings.mode)?,
             2 => settings.device = edit_device(settings.device)?,
             3 => settings.interval = edit_interval(settings.interval)?,
-            4 => settings.format = edit_text("送信フォーマット", &settings.format)?,
+            4 => settings.format = edit_text("Format", &settings.format)?,
             5 => settings.osc_host = edit_text("OSC host", &settings.osc_host)?,
             6 => settings.osc_port = edit_port(settings.osc_port)?,
             7 => settings.osc_address = edit_text("OSC address", &settings.osc_address)?,
@@ -149,11 +149,11 @@ mod tests {
     fn menu_items_has_run_fields_and_quit_in_order() {
         let items = menu_items(&Settings::default());
         assert_eq!(items.len(), 10);
-        assert_eq!(items[0], "▶ 実行");
-        assert_eq!(items[1], "モード        監視 (watch)");
-        assert_eq!(items[2], "デバイス      (指定なし)");
-        assert_eq!(items[3], "間隔          10s");
-        assert_eq!(items[9], "終了");
+        assert_eq!(items[0], "▶ Run");
+        assert_eq!(items[1], "Mode          Watch");
+        assert_eq!(items[2], "Device        (none)");
+        assert_eq!(items[3], "Interval      10s");
+        assert_eq!(items[9], "Quit");
     }
 
     #[test]
@@ -165,8 +165,8 @@ mod tests {
             ..Settings::default()
         };
         let items = menu_items(&s);
-        assert_eq!(items[1], "モード        1回認識");
-        assert_eq!(items[2], "デバイス      coreaudio:X");
-        assert_eq!(items[8], "dry-run       on");
+        assert_eq!(items[1], "Mode          Recognize once");
+        assert_eq!(items[2], "Device        coreaudio:X");
+        assert_eq!(items[8], "Dry run       on");
     }
 }

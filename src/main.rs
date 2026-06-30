@@ -61,7 +61,7 @@ fn run() -> Result<()> {
         return match interactive::run(initial)? {
             Some(settings) => {
                 if let Err(err) = config::save(&settings) {
-                    output::print_error(&format!("config を保存できませんでした: {err:#}"));
+                    output::print_error(&format!("Could not save config: {err:#}"));
                 }
                 dispatch(&settings)
             }
