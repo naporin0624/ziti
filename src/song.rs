@@ -4,6 +4,12 @@ pub struct Song {
     pub title: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Device {
+    pub id: String,
+    pub name: String,
+}
+
 /// Suppresses consecutive identical OSC sends. Keyed on the rendered string so
 /// that two distinct tracks collapsing to the same text under the active
 /// `--format` are still treated as one.

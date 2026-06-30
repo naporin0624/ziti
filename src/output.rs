@@ -1,4 +1,4 @@
-use crate::song::Song;
+use crate::song::{Device, Song};
 use chrono::Local;
 use std::io::IsTerminal;
 
@@ -14,6 +14,32 @@ pub fn sent_line(host: &str, port: u16, address: &str, dry_run: bool) -> String 
         format!("   \u{2192} (dry-run) would send OSC udp://{host}:{port} {address}")
     } else {
         format!("   \u{2192} \u{2713} OSC udp://{host}:{port} {address}")
+    }
+}
+
+pub fn device_lines(devices: &[Device]) -> String {
+    let Some(first) = devices.first() else {
+        return "No audio devices found.".to_string();
+    };
+    let mut out = String::from("Audio devices:\n");
+    for device in devices {
+        if device.name.is_empty() {
+            out.push_str(&format!("\n    {}", device.id));
+        } else {
+            out.push_str(&format!("\n  {}\n    {}", device.name, device.id));
+        }
+    }
+    out.push_str(&format!("\n\nPass an id to -d, e.g. ziti -d {}", first.id));
+    out
+}
+
+pub fn print_devices(devices: &[Device]) {
+    for line in device_lines(devices).split('\n') {
+        if line.starts_with("    ") || line.starts_with("Pass an id") {
+            println!("{}", dim(line));
+        } else {
+            println!("{line}");
+        }
     }
 }
 
@@ -110,5 +136,38 @@ mod tests {
     #[test]
     fn error_line_has_cross_marker() {
         assert_eq!(error_line("boom"), "\u{2717} boom");
+    }
+
+    fn device(id: &str, name: &str) -> Device {
+        Device {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn device_lines_renders_two_tier_layout() {
+        let devices = vec![
+            device("coreaudio:A", "Mic A"),
+            device("coreaudio:B", "Mic B"),
+        ];
+        assert_eq!(
+            device_lines(&devices),
+            "Audio devices:\n\n  Mic A\n    coreaudio:A\n  Mic B\n    coreaudio:B\n\nPass an id to -d, e.g. ziti -d coreaudio:A"
+        );
+    }
+
+    #[test]
+    fn device_lines_empty_slice_reports_none() {
+        assert_eq!(device_lines(&[]), "No audio devices found.");
+    }
+
+    #[test]
+    fn device_lines_skips_name_header_when_empty() {
+        let devices = vec![device("coreaudio:Bare", "")];
+        assert_eq!(
+            device_lines(&devices),
+            "Audio devices:\n\n    coreaudio:Bare\n\nPass an id to -d, e.g. ziti -d coreaudio:Bare"
+        );
     }
 }
