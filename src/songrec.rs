@@ -54,7 +54,11 @@ pub fn parse_device_line(line: &str) -> Option<crate::song::Device> {
     })
 }
 
-pub fn list_devices() -> Result<()> {
+pub fn parse_device_list(stderr: &str) -> Vec<crate::song::Device> {
+    stderr.lines().filter_map(parse_device_line).collect()
+}
+
+pub fn fetch_devices() -> Result<Vec<crate::song::Device>> {
     let output = Command::new("songrec")
         .args(["recognize", "-l"])
         .stdout(Stdio::null())
@@ -66,7 +70,11 @@ pub fn list_devices() -> Result<()> {
         "songrec exited with failure while listing devices"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let devices: Vec<_> = stderr.lines().filter_map(parse_device_line).collect();
+    Ok(parse_device_list(&stderr))
+}
+
+pub fn list_devices() -> Result<()> {
+    let devices = fetch_devices()?;
     crate::output::print_devices(&devices);
     Ok(())
 }
@@ -190,5 +198,19 @@ mod tests {
         let device = parse_device_line(line).unwrap();
         assert_eq!(device.id, "coreaudio:BareDevice");
         assert_eq!(device.name, "");
+    }
+
+    #[test]
+    fn parse_device_list_collects_multiple_and_skips_noise() {
+        let stderr = "[INFO] starting\n\
+[2026 INFO songrec] Available device: coreaudio:A (\u{200e}マイク)\n\
+unrelated line\n\
+[2026 INFO songrec] Available device: coreaudio:B (機器セット)\n";
+        let devices = parse_device_list(stderr);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "coreaudio:A");
+        assert_eq!(devices[0].name, "マイク");
+        assert_eq!(devices[1].id, "coreaudio:B");
+        assert_eq!(devices[1].name, "機器セット");
     }
 }
