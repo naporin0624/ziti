@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod config;
 pub mod format;
+pub mod interactive;
 pub mod osc;
 pub mod output;
 pub mod settings;
