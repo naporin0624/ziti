@@ -100,7 +100,7 @@ ziti --osc-host 192.168.1.10 --osc-port 9000 \
 | `-d, --device <NAME>` | システム既定 | 使用する音声デバイス（songrec の `-d` に渡す） |
 | `--watch` | off | 常駐監視。新しい曲ごとに送信（連続同一はスキップ） |
 | `-i, --interval <SEC>` | 10 | Shazam へのリクエスト間隔（songrec の `-i`） |
-| `--format <TMPL>` | `{artist} - {title}` | 送信文字列テンプレート（`{artist}` `{title}` を置換） |
+| `--format <TMPL>` | `{artist} - {title}` | 送信文字列テンプレート（`{artist}` `{title}` `{offset}` を置換） |
 | `--osc-host <HOST>` | 127.0.0.1 | OSC 送信先ホスト |
 | `--osc-port <PORT>` | 9100 | OSC 送信先ポート |
 | `--osc-address <ADDR>` | /cannelloni/search | OSC アドレスパターン |
@@ -113,17 +113,35 @@ ziti --osc-host 192.168.1.10 --osc-port 9000 \
 
 ```
 [12:30:34] ♪ recognized
-           Mirin Sheeno - Harmony
+           Mirin Sheeno - Harmony (88.6s)
    → ✓ OSC udp://127.0.0.1:9100 /cannelloni/search
+   → ✓ OSC udp://127.0.0.1:9100 /ziti/offset 88.6
 ```
 
-`--dry-run` のときは送信行が `→ (dry-run) would send …` になります。
+`(88.6s)` の表記と `/ziti/offset` の行は、Shazam が曲内位置を返したときだけ表示されます。
+`--dry-run` のときは各送信行が `→ (dry-run) would send …` になります（offset の行には
+送信するはずだった値が表示されます）。
+
+## 追加の OSC シグナル
+
+曲名の string に加えて、固定アドレスで float メッセージを 1 つ送ります。
+
+| アドレス | 型 | 内容 |
+|---------|----|------|
+| `/ziti/offset` | float | 認識した断片が曲のどの位置（秒）にあるか。Shazam が返した場合、曲名送信の直後に送ります。負の値（解析窓が曲頭より前に始まった場合）は `0.0` に丸めます |
+
+`--dry-run` のときは送信せず値を表示します。
 
 ## 挙動メモ
 
-- 送る OSC メッセージは **string 型の引数 1 個**（整形済みの曲名）だけです。
+- `--osc-address` へ送る OSC メッセージは **string 型の引数 1 個**（整形済みの曲名）だけです。
+  オフセットは上記の `/ziti/offset` へ float として別メッセージで送ります。
 - `--watch` では送信に失敗しても警告を出して監視を継続します（単発モードは失敗で非 0 終了）。
 - 曲の重複判定は「整形後の文字列」で行うため、`--format` を変えると判定単位も変わります。
+- `--format` の `{offset}` は曲内位置（秒、小数 1 桁。例 `88.6`）に置換されます。Shazam が
+  位置を返さなかった場合は空文字列になります。重複判定は整形後の文字列で行うため、
+  `{offset}` を含むフォーマットでは同じ曲でも認識のたびに更新されたオフセット付きで
+  再送されます（動く現在位置として使うなら意図どおりですが、重複抑制は実質無効になります）。
 - songrec 自身の stderr ログは抑制され、表示されるのは `ziti` の出力だけです。
 
 ## 開発

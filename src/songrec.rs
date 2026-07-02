@@ -7,9 +7,15 @@ pub fn parse_song_json(line: &str) -> Option<Song> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     let title = value["track"]["title"].as_str()?;
     let artist = value["track"]["subtitle"].as_str()?;
+    // Shazam reports a negative offset when the analyzed window starts before
+    // the track head; clamp to 0 since it is meaningless as a playback position.
+    let offset = value["matches"][0]["offset"]
+        .as_f64()
+        .map(|secs| secs.max(0.0));
     Some(Song {
         artist: artist.to_string(),
         title: title.to_string(),
+        offset,
     })
 }
 
@@ -128,11 +134,52 @@ mod tests {
 
     const MATCH: &str = r#"{"matches":[{"id":"1"}],"timestamp":1700000000,"track":{"key":"123","title":"Harmony","subtitle":"Mirin Sheeno","images":{"coverart":"https://x"}}}"#;
 
+    /// Trimmed from a real `songrec -j` Shazam response.
+    const SHAZAM_RESPONSE: &str = r#"{
+        "location": {"accuracy": 0.01},
+        "matches": [
+            {"frequencyskew": -0.00044292212, "id": "877191404", "offset": 88.55546875, "timeskew": -0.0005968213},
+            {"frequencyskew": -0.0003221631, "id": "508449286", "offset": 89.958476562, "timeskew": -0.0005222559}
+        ],
+        "tagid": "f8ee3421-4906-46d0-809d-ae01975773b2",
+        "timestamp": 601233287,
+        "timezone": "Europe/Paris",
+        "track": {
+            "isrc": "QM42K2079668",
+            "key": "508449286",
+            "subtitle": "EmoCosine",
+            "title": "This Club Is Not 4 U",
+            "type": "MUSIC",
+            "url": "https://www.shazam.com/track/508449286/this-club-is-not-4-u"
+        }
+    }"#;
+
     #[test]
     fn parses_artist_and_title() {
         let song = parse_song_json(MATCH).unwrap();
         assert_eq!(song.artist, "Mirin Sheeno");
         assert_eq!(song.title, "Harmony");
+    }
+
+    #[test]
+    fn match_without_offset_yields_none_offset() {
+        let song = parse_song_json(MATCH).unwrap();
+        assert_eq!(song.offset, None);
+    }
+
+    #[test]
+    fn parses_offset_from_real_shazam_response() {
+        let song = parse_song_json(SHAZAM_RESPONSE).unwrap();
+        assert_eq!(song.artist, "EmoCosine");
+        assert_eq!(song.title, "This Club Is Not 4 U");
+        assert_eq!(song.offset, Some(88.55546875));
+    }
+
+    #[test]
+    fn negative_offset_is_clamped_to_zero() {
+        let json = r#"{"matches":[{"id":"1","offset":-5.0}],"track":{"title":"Harmony","subtitle":"Mirin Sheeno"}}"#;
+        let song = parse_song_json(json).unwrap();
+        assert_eq!(song.offset, Some(0.0));
     }
 
     #[test]

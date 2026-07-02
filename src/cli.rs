@@ -19,7 +19,7 @@ pub struct Cli {
     #[arg(short = 'i', long, default_value_t = 10)]
     pub interval: u64,
 
-    /// Template for the sent string; supports {artist} and {title}
+    /// Template for the sent string; supports {artist}, {title}, and {offset}
     #[arg(long, default_value = "{artist} - {title}")]
     pub format: String,
 

@@ -105,7 +105,7 @@ reinstall, so checking `--list` each time is more robust than hardcoding one.
 | `-d, --device <NAME>` | system default | Audio device to use (passed to songrec `-d`) |
 | `--watch` | off | Keep listening; send on every new song (consecutive duplicates skipped) |
 | `-i, --interval <SEC>` | 10 | Seconds between Shazam requests (songrec `-i`) |
-| `--format <TMPL>` | `{artist} - {title}` | Template for the sent string (`{artist}`, `{title}` are substituted) |
+| `--format <TMPL>` | `{artist} - {title}` | Template for the sent string (`{artist}`, `{title}`, `{offset}` are substituted) |
 | `--osc-host <HOST>` | 127.0.0.1 | OSC destination host |
 | `--osc-port <PORT>` | 9100 | OSC destination port |
 | `--osc-address <ADDR>` | /cannelloni/search | OSC address pattern |
@@ -119,19 +119,41 @@ under `NO_COLOR` or when piped.
 
 ```
 [12:30:34] ♪ recognized
-           Mirin Sheeno - Harmony
+           Mirin Sheeno - Harmony (88.6s)
    → ✓ OSC udp://127.0.0.1:9100 /cannelloni/search
+   → ✓ OSC udp://127.0.0.1:9100 /ziti/offset 88.6
 ```
 
-With `--dry-run` the send line becomes `→ (dry-run) would send …`.
+The `(88.6s)` suffix and the `/ziti/offset` line appear only when Shazam
+reports the in-track position. With `--dry-run` each send line becomes
+`→ (dry-run) would send …` (the offset line includes the value that would
+have been sent).
+
+## Extra OSC signals
+
+Alongside the song string, `ziti` sends a float message on a fixed address:
+
+| Address | Type | Meaning |
+|---------|------|---------|
+| `/ziti/offset` | float | Position in seconds within the track where the recognized snippet sits; sent right after each song string when Shazam reports it. Negative offsets (window starting before the track head) are clamped to `0.0` |
+
+`--dry-run` prints the values instead of sending them.
 
 ## Behavior notes
 
-- The OSC message carries exactly **one `string` argument** (the formatted text).
+- The message at `--osc-address` carries exactly **one `string` argument** (the
+  formatted text); the offset travels separately as the `/ziti/offset` float
+  described above.
 - In `--watch` mode a send failure is logged as a warning and watching
   continues; one-shot mode exits non-zero on failure.
 - Duplicate detection compares the **formatted string**, so changing `--format`
   also changes what counts as the same song.
+- `{offset}` in `--format` becomes the in-track position in seconds with one
+  decimal (e.g. `88.6`), or an empty string when Shazam reports none. Because
+  duplicate detection keys on the rendered string, a format containing
+  `{offset}` re-sends the same song on every recognition cycle with the updated
+  offset — useful as a moving current-time signal, but it effectively disables
+  duplicate suppression.
 - songrec's own stderr logging is silenced; only `ziti`'s output is printed.
 
 ## Development
