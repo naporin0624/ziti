@@ -105,6 +105,7 @@ ziti --osc-host 192.168.1.10 --osc-port 9000 \
 | `--osc-port <PORT>` | 9100 | OSC 送信先ポート |
 | `--osc-address <ADDR>` | /cannelloni/search | OSC アドレスパターン |
 | `--osc-offset-address <ADDR>` | /ziti/offset | 曲内オフセット float の OSC アドレスパターン |
+| `--no-osc-offset` | off | 曲内オフセット float を送信しない |
 | `--dry-run` | off | OSC を送信せず内容のみ表示 |
 
 ## 出力
@@ -132,7 +133,8 @@ float メッセージを 1 つ送ります。
 |---------|----|------|
 | `/ziti/offset`（既定） | float | 認識した断片が曲のどの位置（秒）にあるか。Shazam が返した場合、曲名送信の直後に送ります。負の値（解析窓が曲頭より前に始まった場合）は `0.0` に丸めます |
 
-`--dry-run` のときは送信せず値を表示します。
+`--dry-run` のときは送信せず値を表示します。`--no-osc-offset` で float 送信自体を
+無効化できます（`(88.6s)` の表示と `--format` の `{offset}` には影響しません）。
 
 ## 挙動メモ
 

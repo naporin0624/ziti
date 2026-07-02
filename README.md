@@ -110,6 +110,7 @@ reinstall, so checking `--list` each time is more robust than hardcoding one.
 | `--osc-port <PORT>` | 9100 | OSC destination port |
 | `--osc-address <ADDR>` | /cannelloni/search | OSC address pattern |
 | `--osc-offset-address <ADDR>` | /ziti/offset | OSC address pattern for the in-track offset float |
+| `--no-osc-offset` | off | Do not send the in-track offset float |
 | `--dry-run` | off | Print the message instead of sending it |
 
 ## Output
@@ -139,7 +140,9 @@ Alongside the song string, `ziti` sends a float message on a separate address
 |---------|------|---------|
 | `/ziti/offset` (default) | float | Position in seconds within the track where the recognized snippet sits; sent right after each song string when Shazam reports it. Negative offsets (window starting before the track head) are clamped to `0.0` |
 
-`--dry-run` prints the values instead of sending them.
+`--dry-run` prints the values instead of sending them. The float send can be
+disabled entirely with `--no-osc-offset`; the `(88.6s)` display and `{offset}`
+in `--format` are unaffected.
 
 ## Behavior notes
 

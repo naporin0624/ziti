@@ -23,7 +23,7 @@ fn handle_song(settings: &Settings, song: &Song) -> Result<()> {
         &settings.osc_address,
         settings.dry_run,
     );
-    if let Some(offset) = song.offset {
+    if let Some(offset) = song.offset.filter(|_| settings.osc_offset_enabled) {
         if !settings.dry_run {
             osc::send_float(
                 &settings.osc_host,
