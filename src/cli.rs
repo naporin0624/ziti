@@ -35,6 +35,10 @@ pub struct Cli {
     #[arg(long = "osc-address", default_value = "/cannelloni/search")]
     pub osc_address: String,
 
+    /// OSC address pattern for the in-track offset float
+    #[arg(long = "osc-offset-address", default_value = "/ziti/offset")]
+    pub osc_offset_address: String,
+
     /// Print what would be sent without sending OSC
     #[arg(long)]
     pub dry_run: bool,
@@ -52,6 +56,7 @@ mod tests {
         assert_eq!(cli.osc_host, "127.0.0.1");
         assert_eq!(cli.osc_port, 9100);
         assert_eq!(cli.osc_address, "/cannelloni/search");
+        assert_eq!(cli.osc_offset_address, "/ziti/offset");
         assert!(!cli.list && !cli.watch && !cli.dry_run);
         assert!(cli.device.is_none());
     }
@@ -65,11 +70,14 @@ mod tests {
             "dev",
             "--osc-port",
             "9000",
+            "--osc-offset-address",
+            "/myapp/offset",
             "--dry-run",
         ]);
         assert!(cli.watch);
         assert_eq!(cli.device.as_deref(), Some("dev"));
         assert_eq!(cli.osc_port, 9000);
+        assert_eq!(cli.osc_offset_address, "/myapp/offset");
         assert!(cli.dry_run);
     }
 

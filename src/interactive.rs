@@ -30,6 +30,7 @@ pub fn menu_items(s: &Settings) -> Vec<String> {
         format!("{:<14}{}", "OSC host", s.osc_host),
         format!("{:<14}{}", "OSC port", s.osc_port),
         format!("{:<14}{}", "OSC address", s.osc_address),
+        format!("{:<14}{}", "OSC offset", s.osc_offset_address),
         format!("{:<14}{}", "Dry run", if s.dry_run { "on" } else { "off" }),
         QUIT_LABEL.to_string(),
     ]
@@ -134,7 +135,11 @@ pub fn run(mut settings: Settings) -> Result<Option<Settings>> {
             5 => settings.osc_host = edit_text("OSC host", &settings.osc_host)?,
             6 => settings.osc_port = edit_port(settings.osc_port)?,
             7 => settings.osc_address = edit_text("OSC address", &settings.osc_address)?,
-            8 => settings.dry_run = edit_dry_run(settings.dry_run)?,
+            8 => {
+                settings.osc_offset_address =
+                    edit_text("OSC offset address", &settings.osc_offset_address)?
+            }
+            9 => settings.dry_run = edit_dry_run(settings.dry_run)?,
             _ => return Ok(None),
         }
     }
@@ -148,12 +153,13 @@ mod tests {
     #[test]
     fn menu_items_has_run_fields_and_quit_in_order() {
         let items = menu_items(&Settings::default());
-        assert_eq!(items.len(), 10);
+        assert_eq!(items.len(), 11);
         assert_eq!(items[0], "▶ Run");
         assert_eq!(items[1], "Mode          Watch");
         assert_eq!(items[2], "Device        (none)");
         assert_eq!(items[3], "Interval      10s");
-        assert_eq!(items[9], "Quit");
+        assert_eq!(items[8], "OSC offset    /ziti/offset");
+        assert_eq!(items[10], "Quit");
     }
 
     #[test]
@@ -161,12 +167,14 @@ mod tests {
         let s = Settings {
             mode: Mode::Once,
             device: Some("coreaudio:X".to_string()),
+            osc_offset_address: "/myapp/offset".to_string(),
             dry_run: true,
             ..Settings::default()
         };
         let items = menu_items(&s);
         assert_eq!(items[1], "Mode          Recognize once");
         assert_eq!(items[2], "Device        coreaudio:X");
-        assert_eq!(items[8], "Dry run       on");
+        assert_eq!(items[8], "OSC offset    /myapp/offset");
+        assert_eq!(items[9], "Dry run       on");
     }
 }

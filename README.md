@@ -109,6 +109,7 @@ reinstall, so checking `--list` each time is more robust than hardcoding one.
 | `--osc-host <HOST>` | 127.0.0.1 | OSC destination host |
 | `--osc-port <PORT>` | 9100 | OSC destination port |
 | `--osc-address <ADDR>` | /cannelloni/search | OSC address pattern |
+| `--osc-offset-address <ADDR>` | /ziti/offset | OSC address pattern for the in-track offset float |
 | `--dry-run` | off | Print the message instead of sending it |
 
 ## Output
@@ -131,19 +132,20 @@ have been sent).
 
 ## Extra OSC signals
 
-Alongside the song string, `ziti` sends a float message on a fixed address:
+Alongside the song string, `ziti` sends a float message on a separate address
+(default `/ziti/offset`, configurable via `--osc-offset-address`):
 
 | Address | Type | Meaning |
 |---------|------|---------|
-| `/ziti/offset` | float | Position in seconds within the track where the recognized snippet sits; sent right after each song string when Shazam reports it. Negative offsets (window starting before the track head) are clamped to `0.0` |
+| `/ziti/offset` (default) | float | Position in seconds within the track where the recognized snippet sits; sent right after each song string when Shazam reports it. Negative offsets (window starting before the track head) are clamped to `0.0` |
 
 `--dry-run` prints the values instead of sending them.
 
 ## Behavior notes
 
 - The message at `--osc-address` carries exactly **one `string` argument** (the
-  formatted text); the offset travels separately as the `/ziti/offset` float
-  described above.
+  formatted text); the offset travels separately as the float message at
+  `--osc-offset-address` described above.
 - In `--watch` mode a send failure is logged as a warning and watching
   continues; one-shot mode exits non-zero on failure.
 - Duplicate detection compares the **formatted string**, so changing `--format`

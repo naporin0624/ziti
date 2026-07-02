@@ -6,8 +6,6 @@ use ziti::settings::{Mode, Settings};
 use ziti::song::{Deduplicator, Song};
 use ziti::{config, format, interactive, osc, output, songrec};
 
-const OFFSET_ADDRESS: &str = "/ziti/offset";
-
 fn handle_song(settings: &Settings, song: &Song) -> Result<()> {
     let text = format::render(&settings.format, song);
     output::print_recognized(song);
@@ -30,14 +28,14 @@ fn handle_song(settings: &Settings, song: &Song) -> Result<()> {
             osc::send_float(
                 &settings.osc_host,
                 settings.osc_port,
-                OFFSET_ADDRESS,
+                &settings.osc_offset_address,
                 offset as f32,
             )?;
         }
         output::print_sent_float(
             &settings.osc_host,
             settings.osc_port,
-            OFFSET_ADDRESS,
+            &settings.osc_offset_address,
             offset,
             settings.dry_run,
         );

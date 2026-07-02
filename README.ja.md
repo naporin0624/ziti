@@ -104,6 +104,7 @@ ziti --osc-host 192.168.1.10 --osc-port 9000 \
 | `--osc-host <HOST>` | 127.0.0.1 | OSC 送信先ホスト |
 | `--osc-port <PORT>` | 9100 | OSC 送信先ポート |
 | `--osc-address <ADDR>` | /cannelloni/search | OSC アドレスパターン |
+| `--osc-offset-address <ADDR>` | /ziti/offset | 曲内オフセット float の OSC アドレスパターン |
 | `--dry-run` | off | OSC を送信せず内容のみ表示 |
 
 ## 出力
@@ -124,18 +125,19 @@ ziti --osc-host 192.168.1.10 --osc-port 9000 \
 
 ## 追加の OSC シグナル
 
-曲名の string に加えて、固定アドレスで float メッセージを 1 つ送ります。
+曲名の string に加えて、別アドレス（既定 `/ziti/offset`、`--osc-offset-address` で変更可）で
+float メッセージを 1 つ送ります。
 
 | アドレス | 型 | 内容 |
 |---------|----|------|
-| `/ziti/offset` | float | 認識した断片が曲のどの位置（秒）にあるか。Shazam が返した場合、曲名送信の直後に送ります。負の値（解析窓が曲頭より前に始まった場合）は `0.0` に丸めます |
+| `/ziti/offset`（既定） | float | 認識した断片が曲のどの位置（秒）にあるか。Shazam が返した場合、曲名送信の直後に送ります。負の値（解析窓が曲頭より前に始まった場合）は `0.0` に丸めます |
 
 `--dry-run` のときは送信せず値を表示します。
 
 ## 挙動メモ
 
 - `--osc-address` へ送る OSC メッセージは **string 型の引数 1 個**（整形済みの曲名）だけです。
-  オフセットは上記の `/ziti/offset` へ float として別メッセージで送ります。
+  オフセットは上記の `--osc-offset-address` のアドレスへ float として別メッセージで送ります。
 - `--watch` では送信に失敗しても警告を出して監視を継続します（単発モードは失敗で非 0 終了）。
 - 曲の重複判定は「整形後の文字列」で行うため、`--format` を変えると判定単位も変わります。
 - `--format` の `{offset}` は曲内位置（秒、小数 1 桁。例 `88.6`）に置換されます。Shazam が
