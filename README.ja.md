@@ -37,6 +37,8 @@ songrec 自身のログ出力（stderr に出る `INFO …` 行）は抑制し�
 cargo install songrec --no-default-features --features ffmpeg
 ```
 
+Windows の場合は [Windows で使う](#windows-で使う) を参照してください。
+
 ## ビルド
 
 ```sh
@@ -66,6 +68,120 @@ cargo install --path .       # ~/.cargo/bin/ziti に配置
 # またはローカル実行
 cargo run -- --help
 ```
+
+## Windows で使う
+
+`ziti` 自体は純粋な Rust なので任意の Windows 用 Rust ツールチェインでビルドできますが、
+`songrec` は CLI のみのビルドでも GNOME 系のネイティブライブラリ（glib, libsoup3, gettext）に
+依存しており、ビルド済み Windows バイナリも配布されていません。手段は 2 つあります。
+Docker コンテナですべて動かす方法（推奨 — songrec の本来のプラットフォームである Linux 上で
+そのままビルドできます）と、MSYS2 でネイティブビルドする方法です。
+
+### Docker（推奨）
+
+音声は WSLg の PulseAudio ブリッジ経由でコンテナに入り、OSC はただの UDP として
+コンテナから出ていきます。コード変更も MSYS2 も不要です。
+
+前提条件:
+
+- Docker — WSL2 バックエンドの Docker Desktop、または WSL2 ディストリビューション内に
+  インストールした Docker Engine。
+- Windows ホスト側の [VB-CABLE](https://vb-audio.com/Cable/)。ループバックはホストの
+  仕事のままで、コンテナは WSLg が転送してきた音を読むだけです。
+
+Windows 側のオーディオ設定（設定 > システム > サウンド）:
+
+- 既定の**再生**デバイス → 「CABLE Input」。再生した音がすべてケーブルに流れます。
+- 既定の**録音**デバイス → 「CABLE Output」。WSLg の RDPSource は既定の録音デバイスを
+  キャプチャして Linux 側に公開します。
+
+```
+Windows audio (既定の再生デバイス)
+        │
+        ▼
+   VB-CABLE  (CABLE Input → CABLE Output, 既定の録音デバイス)
+        │
+        ▼
+   WSLg PulseAudio  (/mnt/wslg/PulseServer)
+        │   volume mount + PULSE_SERVER
+        ▼
+   container:  songrec ──▶ ziti
+        │
+        ▼  (UDP OSC)
+   host.docker.internal (Windows ホスト)  /  LAN 上の任意のホスト
+```
+
+使い方（WSL2 ディストリビューション内のリポジトリチェックアウトから）:
+
+```sh
+# イメージをビルドし、コンテナから見えるオーディオデバイスを一覧
+docker compose run --rm ziti --list
+
+# 常駐監視して Windows ホスト上のプログラムへ OSC を送信
+docker compose run --rm ziti --watch --osc-host host.docker.internal
+
+# または compose.yaml の `command:` のコメントを外して
+docker compose up
+```
+
+Windows ホスト上の受信側へ届けるには `--osc-host host.docker.internal` を指定します。
+LAN 上の別ホストへは `--osc-host <ip>` でそのまま届きます。その他のフラグ・設定ファイル・
+対話モードはすべて同じです。songrec が Pulse ソースを自動選択しない場合は
+`-d alsa:pulse` を付けてください。
+
+注意点:
+
+- `/mnt/wslg` のマウントは Microsoft 公式の WSLg コンテナサンプルに沿ったもので、
+  WSL2 ディストリビューション内で動かす Docker Engine で最も確実に動作します。
+  Docker Desktop 自身の VM からはディストリビューションの `/mnt/wslg` が見えない
+  場合があります。
+- オーディオ経路は実際の Windows マシンではまだ検証していません。
+- イメージのビルドは linux/arm64 でのみスモークテスト済みです。
+
+### MSYS2 でネイティブビルド
+
+MSYS2 の UCRT64 環境は SongRec 本家の公式 Windows 手順で、songrec に必要なネイティブ
+ライブラリがすべて揃います。
+
+1. [MSYS2](https://www.msys2.org/) をインストールし、**UCRT64** シェルを開きます。
+
+2. ビルドに必要な依存をインストールします（本家 SongRec の UCRT64 リストから
+   GUI 専用パッケージを除いたもの）。
+
+   ```sh
+   pacman -S mingw-w64-ucrt-x86_64-rust mingw-w64-ucrt-x86_64-gcc \
+             mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-glib2 \
+             mingw-w64-ucrt-x86_64-libsoup3 mingw-w64-ucrt-x86_64-gettext-runtime \
+             mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-ffmpeg
+   ```
+
+3. songrec をインストールします（CLI のみ・GUI なし）。
+
+   ```sh
+   cargo install songrec --no-default-features --features ffmpeg
+   ```
+
+4. ziti のチェックアウトディレクトリから、同じシェルで ziti をインストールします。
+
+   ```sh
+   cargo install --path .
+   ```
+
+5. オーディオループバックを設定します。[VB-CABLE](https://vb-audio.com/Cable/) を
+   インストールし、Windows の既定の再生デバイスを「CABLE Input」に設定（設定 > システム >
+   サウンド）した上で、デバイス一覧から「CABLE Output」のエントリを `-d` に渡します。
+
+   ```sh
+   ziti --list
+   ziti --watch -d "<--list に表示された CABLE Output デバイス>"
+   ```
+
+   サウンドドライバが「ステレオ ミキサー (Stereo Mix)」を提供している場合は、VB-CABLE の
+   代わりに使えます。Windows のデバイス名は WASAPI 由来のため、macOS の `coreaudio:...`
+   形式とは見た目が異なります。必ず `--list` の出力から選んでください。
+
+フラグ・設定ファイル・対話モードはすべて macOS/Linux と同じように動作します。なお、この手順は
+SongRec 本家の公式 MSYS2 手順に沿ったものですが、実際の Windows マシンではまだ検証していません。
 
 ## 使い方
 

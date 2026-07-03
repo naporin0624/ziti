@@ -1,0 +1,12 @@
+services:
+  ziti:
+    build: .
+    volumes:
+      # WSLg PulseAudio socket (per Microsoft's official WSLg container sample)
+      - /mnt/wslg:/mnt/wslg
+    environment:
+      PULSE_SERVER: unix:/mnt/wslg/PulseServer
+    extra_hosts:
+      # Makes host.docker.internal resolve with Docker Engine inside WSL2 too
+      - "host.docker.internal:host-gateway"
+    # command: ["--watch", "--osc-host", "host.docker.internal"]

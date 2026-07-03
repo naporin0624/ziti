@@ -42,6 +42,8 @@ so you only see `ziti`'s own status output.
 cargo install songrec --no-default-features --features ffmpeg
 ```
 
+On Windows, see [Using on Windows](#using-on-windows).
+
 ## Build
 
 ```sh
@@ -69,6 +71,123 @@ You can also install it straight onto your `PATH` with cargo:
 ```sh
 cargo install --path .    # installs to ~/.cargo/bin/ziti
 ```
+
+## Using on Windows
+
+`ziti` itself is plain Rust and builds with any Windows Rust toolchain, but
+`songrec` depends on a few GNOME-stack native libraries (glib, libsoup3,
+gettext) even for a CLI-only build, and it ships no prebuilt Windows binaries.
+There are two routes: run everything in a Docker container (recommended —
+songrec builds natively on Linux, its mainline platform), or build natively
+with MSYS2.
+
+### Docker (recommended)
+
+Audio enters the container through WSLg's PulseAudio bridge, and OSC leaves it
+as plain UDP — no code changes, no MSYS2.
+
+Prerequisites:
+
+- Docker — Docker Desktop with the WSL2 backend, or Docker Engine installed
+  inside a WSL2 distro.
+- [VB-CABLE](https://vb-audio.com/Cable/) on the Windows host. Loopback is
+  still the host's job; the container only reads what WSLg forwards.
+
+Windows audio setup (Settings > System > Sound):
+
+- Default **playback** device → "CABLE Input", so everything you play flows
+  into the cable.
+- Default **recording** device → "CABLE Output" — WSLg's RDPSource captures
+  the default recording device and exposes it to Linux.
+
+```
+Windows audio (default playback)
+        │
+        ▼
+   VB-CABLE  (CABLE Input → CABLE Output, default recording)
+        │
+        ▼
+   WSLg PulseAudio  (/mnt/wslg/PulseServer)
+        │   volume mount + PULSE_SERVER
+        ▼
+   container:  songrec ──▶ ziti
+        │
+        ▼  (UDP OSC)
+   host.docker.internal (Windows host)  /  any LAN host
+```
+
+Usage (from the repo checkout, inside the WSL2 distro):
+
+```sh
+# Build the image and list the audio devices the container sees
+docker compose run --rm ziti --list
+
+# Watch and send OSC to a program on the Windows host
+docker compose run --rm ziti --watch --osc-host host.docker.internal
+
+# Or uncomment `command:` in compose.yaml and just
+docker compose up
+```
+
+To reach a receiver on the Windows host, use `--osc-host
+host.docker.internal`; hosts elsewhere on the LAN work directly with
+`--osc-host <ip>`. All other flags, the config file, and interactive mode are
+identical. If songrec does not pick the Pulse source automatically, add
+`-d alsa:pulse`.
+
+Caveats:
+
+- The `/mnt/wslg` mount follows Microsoft's official WSLg container sample and
+  is most reliable with Docker Engine running inside a WSL2 distro; Docker
+  Desktop's own VM may not see your distro's `/mnt/wslg`.
+- The audio path has not been verified on a real Windows machine.
+- The image build is smoke-tested on linux/arm64 only.
+
+### Native build with MSYS2
+
+The MSYS2 UCRT64 environment is upstream SongRec's official Windows setup and
+provides all the native libraries songrec needs.
+
+1. Install [MSYS2](https://www.msys2.org/) and open the **UCRT64** shell.
+
+2. Install the build dependencies (upstream SongRec's UCRT64 list minus the
+   GUI-only packages):
+
+   ```sh
+   pacman -S mingw-w64-ucrt-x86_64-rust mingw-w64-ucrt-x86_64-gcc \
+             mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-glib2 \
+             mingw-w64-ucrt-x86_64-libsoup3 mingw-w64-ucrt-x86_64-gettext-runtime \
+             mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-ffmpeg
+   ```
+
+3. Install songrec (CLI only, no GUI):
+
+   ```sh
+   cargo install songrec --no-default-features --features ffmpeg
+   ```
+
+4. From the ziti checkout, install ziti in the same shell:
+
+   ```sh
+   cargo install --path .
+   ```
+
+5. Set up audio loopback. Install [VB-CABLE](https://vb-audio.com/Cable/) and
+   set the Windows default playback device to "CABLE Input" (Settings > System
+   > Sound), then list devices and pass the "CABLE Output" entry to `-d`:
+
+   ```sh
+   ziti --list
+   ziti --watch -d "<CABLE Output device from --list>"
+   ```
+
+   If your sound driver provides "Stereo Mix", that works as an alternative to
+   VB-CABLE. Device names on Windows come from WASAPI, so they look different
+   from the macOS `coreaudio:...` form — always pick from the `--list` output.
+
+All flags, the config file, and interactive mode work the same as on
+macOS/Linux. Note that these steps follow upstream SongRec's official MSYS2
+instructions but have not yet been verified on a real Windows machine.
 
 ## Usage
 

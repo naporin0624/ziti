@@ -1,0 +1,9 @@
+target/
+.git/
+docs/
+.claude/
+*.md
+compose.yaml
+Dockerfile
+.dockerignore
+.rusty-hook.toml
