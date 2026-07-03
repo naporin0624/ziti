@@ -37,6 +37,8 @@ songrec 自身のログ出力（stderr に出る `INFO …` 行）は抑制し�
 cargo install songrec --no-default-features --features ffmpeg
 ```
 
+Windows の場合は [Windows で使う](#windows-で使う) を参照してください。
+
 ## ビルド
 
 ```sh
@@ -66,6 +68,53 @@ cargo install --path .       # ~/.cargo/bin/ziti に配置
 # またはローカル実行
 cargo run -- --help
 ```
+
+## Windows で使う
+
+`ziti` 自体は純粋な Rust なので任意の Windows 用 Rust ツールチェインでビルドできますが、
+`songrec` は CLI のみのビルドでも GNOME 系のネイティブライブラリ（glib, libsoup3, gettext）に
+依存しており、ビルド済み Windows バイナリも配布されていません。そのため、すべてを MSYS2 の
+UCRT64 環境内で行うのが最も簡単です（これは SongRec 本家の公式 Windows 手順でもあります）。
+
+1. [MSYS2](https://www.msys2.org/) をインストールし、**UCRT64** シェルを開きます。
+
+2. ビルドに必要な依存をインストールします（本家 SongRec の UCRT64 リストから
+   GUI 専用パッケージを除いたもの）。
+
+   ```sh
+   pacman -S mingw-w64-ucrt-x86_64-rust mingw-w64-ucrt-x86_64-gcc \
+             mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-glib2 \
+             mingw-w64-ucrt-x86_64-libsoup3 mingw-w64-ucrt-x86_64-gettext-runtime \
+             mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-ffmpeg
+   ```
+
+3. songrec をインストールします（CLI のみ・GUI なし）。
+
+   ```sh
+   cargo install songrec --no-default-features --features ffmpeg
+   ```
+
+4. ziti のチェックアウトディレクトリから、同じシェルで ziti をインストールします。
+
+   ```sh
+   cargo install --path .
+   ```
+
+5. オーディオループバックを設定します。[VB-CABLE](https://vb-audio.com/Cable/) を
+   インストールし、Windows の既定の再生デバイスを「CABLE Input」に設定（設定 > システム >
+   サウンド）した上で、デバイス一覧から「CABLE Output」のエントリを `-d` に渡します。
+
+   ```sh
+   ziti --list
+   ziti --watch -d "<--list に表示された CABLE Output デバイス>"
+   ```
+
+   サウンドドライバが「ステレオ ミキサー (Stereo Mix)」を提供している場合は、VB-CABLE の
+   代わりに使えます。Windows のデバイス名は WASAPI 由来のため、macOS の `coreaudio:...`
+   形式とは見た目が異なります。必ず `--list` の出力から選んでください。
+
+フラグ・設定ファイル・対話モードはすべて macOS/Linux と同じように動作します。なお、この手順は
+SongRec 本家の公式 MSYS2 手順に沿ったものですが、実際の Windows マシンではまだ検証していません。
 
 ## 使い方
 
