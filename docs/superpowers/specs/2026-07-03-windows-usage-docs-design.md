@@ -48,11 +48,59 @@ single self-contained section so a Windows reader finds everything in one place.
    - Mirror as `## Windows で使う` in the same position, plus the same
      Requirements pointer, in Japanese.
 
+## Addendum (2026-07-03): Docker route
+
+User follow-up: prefer Docker over the MSYS2 route, with OSC sent out of the
+container. Approved: stack onto the same branch/PR (#3), restructure the
+Windows section so Docker is the recommended route and MSYS2 the native
+alternative.
+
+### Why it works
+
+- OSC is plain UDP; ziti already has `--osc-host`/`--osc-port`. From a
+  container, `host.docker.internal` reaches the Windows host; LAN targets work
+  directly. No code changes.
+- Audio into the container rides WSLg's PulseAudio bridge: Windows default
+  playback → VB-CABLE "CABLE Input"; "CABLE Output" set as Windows default
+  *recording* device; WSLg's RDPSource exposes it at `/mnt/wslg/PulseServer`;
+  the container mounts `/mnt/wslg` and sets
+  `PULSE_SERVER=unix:/mnt/wslg/PulseServer` (per Microsoft's official WSLg
+  container sample).
+- songrec builds natively on Linux (its mainline platform), eliminating MSYS2.
+
+### Deliverables
+
+1. `Dockerfile` — multi-stage: `rust:bookworm` builder installs apt build deps
+   (pkg-config, libssl-dev, libglib2.0-dev, libsoup-3.0-dev, gettext,
+   libasound2-dev, libpipewire-0.3-dev — cpal's Linux pipewire feature is
+   unconditional — plus libpulse-dev if the pulse feature is used) and runs
+   `cargo install songrec --no-default-features` (+`pulse` feature if it
+   builds cleanly) and `cargo build --release` for ziti. Runtime stage:
+   `debian:bookworm-slim` with the runtime libs (libsoup-3.0-0, libasound2 +
+   libasound2-plugins for the ALSA→Pulse bridge, libpulse0, pipewire libs,
+   ca-certificates) and an `/etc/asound.conf` defaulting ALSA to pulse.
+   Entrypoint `ziti`.
+2. `compose.yaml` — mounts `/mnt/wslg`, sets `PULSE_SERVER`, adds
+   `extra_hosts: host.docker.internal:host-gateway` (Docker-Engine-in-WSL
+   case), example command `--watch --osc-host host.docker.internal`.
+3. `.dockerignore` — target/, .git/, docs/.
+4. README.md / README.ja.md — Windows section restructured: Docker route
+   (recommended) first with the audio-chain diagram and compose usage, MSYS2
+   route kept as the native alternative. Honest caveats: VB-CABLE still
+   required on the host; audio path verified only against upstream docs, not
+   on a Windows machine; image build smoke-tested on linux/arm64.
+
+### Verification (local, macOS)
+
+`docker build` completes; `docker run --rm <img> --help` shows ziti help;
+`songrec --help` runs in the image; cargo fmt/clippy/test stay green.
+
 ## Out of scope
 
 - CI cross-build / release binaries (explicitly declined).
-- Verifying on a real Windows machine (explicitly declined).
-- Any code changes.
+- Publishing the image to a registry.
+- Verifying the audio path on a real Windows machine (explicitly declined).
+- Any changes to ziti's Rust code.
 
 ## Testing
 
