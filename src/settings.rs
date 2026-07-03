@@ -15,6 +15,8 @@ pub struct Settings {
     pub osc_host: String,
     pub osc_port: u16,
     pub osc_address: String,
+    pub osc_offset_address: String,
+    pub osc_offset_enabled: bool,
     pub dry_run: bool,
 }
 
@@ -28,6 +30,8 @@ impl Default for Settings {
             osc_host: "127.0.0.1".to_string(),
             osc_port: 9100,
             osc_address: "/cannelloni/search".to_string(),
+            osc_offset_address: "/ziti/offset".to_string(),
+            osc_offset_enabled: true,
             dry_run: false,
         }
     }
@@ -43,6 +47,8 @@ impl From<&Cli> for Settings {
             osc_host: cli.osc_host.clone(),
             osc_port: cli.osc_port,
             osc_address: cli.osc_address.clone(),
+            osc_offset_address: cli.osc_offset_address.clone(),
+            osc_offset_enabled: !cli.no_osc_offset,
             dry_run: cli.dry_run,
         }
     }
@@ -63,6 +69,8 @@ mod tests {
         assert_eq!(s.osc_host, "127.0.0.1");
         assert_eq!(s.osc_port, 9100);
         assert_eq!(s.osc_address, "/cannelloni/search");
+        assert_eq!(s.osc_offset_address, "/ziti/offset");
+        assert!(s.osc_offset_enabled);
         assert_eq!(s.device, None);
         assert!(!s.dry_run);
     }
@@ -77,10 +85,21 @@ mod tests {
 
     #[test]
     fn from_cli_with_watch_is_watch_and_copies_fields() {
-        let cli = Cli::parse_from(["ziti", "--watch", "--osc-port", "9000", "--dry-run"]);
+        let cli = Cli::parse_from([
+            "ziti",
+            "--watch",
+            "--osc-port",
+            "9000",
+            "--osc-offset-address",
+            "/myapp/offset",
+            "--no-osc-offset",
+            "--dry-run",
+        ]);
         let s = Settings::from(&cli);
         assert_eq!(s.mode, Mode::Watch);
         assert_eq!(s.osc_port, 9000);
+        assert_eq!(s.osc_offset_address, "/myapp/offset");
+        assert!(!s.osc_offset_enabled);
         assert!(s.dry_run);
     }
 }

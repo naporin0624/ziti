@@ -23,6 +23,23 @@ fn handle_song(settings: &Settings, song: &Song) -> Result<()> {
         &settings.osc_address,
         settings.dry_run,
     );
+    if let Some(offset) = song.offset.filter(|_| settings.osc_offset_enabled) {
+        if !settings.dry_run {
+            osc::send_float(
+                &settings.osc_host,
+                settings.osc_port,
+                &settings.osc_offset_address,
+                offset as f32,
+            )?;
+        }
+        output::print_sent_float(
+            &settings.osc_host,
+            settings.osc_port,
+            &settings.osc_offset_address,
+            offset,
+            settings.dry_run,
+        );
+    }
     Ok(())
 }
 

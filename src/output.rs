@@ -1,11 +1,16 @@
+use crate::format::offset_seconds;
 use crate::song::{Device, Song};
 use chrono::Local;
 use std::io::IsTerminal;
 
 pub fn recognized_lines(now_hms: &str, song: &Song) -> String {
+    let offset = song
+        .offset
+        .map(|secs| format!(" ({}s)", offset_seconds(secs)))
+        .unwrap_or_default();
     format!(
-        "[{}] \u{266a} recognized\n           {} - {}",
-        now_hms, song.artist, song.title
+        "[{}] \u{266a} recognized\n           {} - {}{}",
+        now_hms, song.artist, song.title, offset
     )
 }
 
@@ -14,6 +19,15 @@ pub fn sent_line(host: &str, port: u16, address: &str, dry_run: bool) -> String 
         format!("   \u{2192} (dry-run) would send OSC udp://{host}:{port} {address}")
     } else {
         format!("   \u{2192} \u{2713} OSC udp://{host}:{port} {address}")
+    }
+}
+
+pub fn sent_float_line(host: &str, port: u16, address: &str, value: f64, dry_run: bool) -> String {
+    let value = offset_seconds(value);
+    if dry_run {
+        format!("   \u{2192} (dry-run) would send OSC udp://{host}:{port} {address} {value}")
+    } else {
+        format!("   \u{2192} \u{2713} OSC udp://{host}:{port} {address} {value}")
     }
 }
 
@@ -97,6 +111,15 @@ pub fn print_sent(host: &str, port: u16, address: &str, dry_run: bool) {
     }
 }
 
+pub fn print_sent_float(host: &str, port: u16, address: &str, value: f64, dry_run: bool) {
+    let line = sent_float_line(host, port, address, value, dry_run);
+    if dry_run {
+        println!("{}", dim(&line));
+    } else {
+        println!("{}", green(&line));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +128,7 @@ mod tests {
         Song {
             artist: "Mirin Sheeno".into(),
             title: "Harmony".into(),
+            offset: None,
         }
     }
 
@@ -130,6 +154,35 @@ mod tests {
     fn sent_line_dry_run_is_marked() {
         let out = sent_line("127.0.0.1", 9100, "/cannelloni/search", true);
         assert!(out.contains("(dry-run)"));
+        assert!(!out.contains("\u{2713}"));
+    }
+
+    #[test]
+    fn recognized_appends_offset_when_present() {
+        let song = Song {
+            offset: Some(88.6),
+            ..song()
+        };
+        assert_eq!(
+            recognized_lines("12:30:34", &song),
+            "[12:30:34] \u{266a} recognized\n           Mirin Sheeno - Harmony (88.6s)"
+        );
+    }
+
+    #[test]
+    fn sent_float_line_shows_value() {
+        let out = sent_float_line("127.0.0.1", 9100, "/ziti/offset", 88.6, false);
+        assert_eq!(
+            out,
+            "   \u{2192} \u{2713} OSC udp://127.0.0.1:9100 /ziti/offset 88.6"
+        );
+    }
+
+    #[test]
+    fn sent_float_line_dry_run_shows_value() {
+        let out = sent_float_line("127.0.0.1", 9100, "/ziti/offset", 88.6, true);
+        assert!(out.contains("(dry-run)"));
+        assert!(out.ends_with("/ziti/offset 88.6"));
         assert!(!out.contains("\u{2713}"));
     }
 

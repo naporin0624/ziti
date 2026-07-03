@@ -19,7 +19,7 @@ pub struct Cli {
     #[arg(short = 'i', long, default_value_t = 10)]
     pub interval: u64,
 
-    /// Template for the sent string; supports {artist} and {title}
+    /// Template for the sent string; supports {artist}, {title}, and {offset}
     #[arg(long, default_value = "{artist} - {title}")]
     pub format: String,
 
@@ -34,6 +34,14 @@ pub struct Cli {
     /// OSC address pattern
     #[arg(long = "osc-address", default_value = "/cannelloni/search")]
     pub osc_address: String,
+
+    /// OSC address pattern for the in-track offset float
+    #[arg(long = "osc-offset-address", default_value = "/ziti/offset")]
+    pub osc_offset_address: String,
+
+    /// Do not send the in-track offset float
+    #[arg(long = "no-osc-offset")]
+    pub no_osc_offset: bool,
 
     /// Print what would be sent without sending OSC
     #[arg(long)]
@@ -52,7 +60,8 @@ mod tests {
         assert_eq!(cli.osc_host, "127.0.0.1");
         assert_eq!(cli.osc_port, 9100);
         assert_eq!(cli.osc_address, "/cannelloni/search");
-        assert!(!cli.list && !cli.watch && !cli.dry_run);
+        assert_eq!(cli.osc_offset_address, "/ziti/offset");
+        assert!(!cli.list && !cli.watch && !cli.dry_run && !cli.no_osc_offset);
         assert!(cli.device.is_none());
     }
 
@@ -65,11 +74,16 @@ mod tests {
             "dev",
             "--osc-port",
             "9000",
+            "--osc-offset-address",
+            "/myapp/offset",
+            "--no-osc-offset",
             "--dry-run",
         ]);
         assert!(cli.watch);
         assert_eq!(cli.device.as_deref(), Some("dev"));
         assert_eq!(cli.osc_port, 9000);
+        assert_eq!(cli.osc_offset_address, "/myapp/offset");
+        assert!(cli.no_osc_offset);
         assert!(cli.dry_run);
     }
 

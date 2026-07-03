@@ -1,7 +1,9 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Song {
     pub artist: String,
     pub title: String,
+    /// Position (seconds) within the track where the recognized snippet sits.
+    pub offset: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

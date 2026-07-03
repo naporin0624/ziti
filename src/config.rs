@@ -14,6 +14,8 @@ pub struct Config {
     pub osc_host: String,
     pub osc_port: u16,
     pub osc_address: String,
+    pub osc_offset_address: String,
+    pub osc_offset_enabled: bool,
     pub dry_run: bool,
 }
 
@@ -37,6 +39,8 @@ impl From<&Settings> for Config {
             osc_host: s.osc_host.clone(),
             osc_port: s.osc_port,
             osc_address: s.osc_address.clone(),
+            osc_offset_address: s.osc_offset_address.clone(),
+            osc_offset_enabled: s.osc_offset_enabled,
             dry_run: s.dry_run,
         }
     }
@@ -56,6 +60,8 @@ impl Config {
             osc_host: self.osc_host,
             osc_port: self.osc_port,
             osc_address: self.osc_address,
+            osc_offset_address: self.osc_offset_address,
+            osc_offset_enabled: self.osc_offset_enabled,
             dry_run: self.dry_run,
         }
     }
@@ -150,6 +156,8 @@ mod tests {
             osc_host: "10.0.0.2".to_string(),
             osc_port: 9000,
             osc_address: "/x/y".to_string(),
+            osc_offset_address: "/x/offset".to_string(),
+            osc_offset_enabled: false,
             dry_run: true,
         };
         let text = toml::to_string_pretty(&Config::from(&original)).unwrap();
@@ -164,5 +172,7 @@ mod tests {
         assert_eq!(s.interval, 30);
         assert_eq!(s.mode, Mode::Watch); // default mode
         assert_eq!(s.osc_port, 9100);
+        assert_eq!(s.osc_offset_address, "/ziti/offset");
+        assert!(s.osc_offset_enabled);
     }
 }
