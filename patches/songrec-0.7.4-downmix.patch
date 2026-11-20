@@ -1,0 +1,24 @@
+--- a/src/core/microphone_thread.rs
++++ b/src/core/microphone_thread.rs
+@@ -349,10 +349,18 @@
+     // Reassemble data into a 12-second buffer, and do recognition
+     // every 4 seconds if the queue to "processing_tx" is empty
+ 
+-    let input_buffer = rodio::buffer::SamplesBuffer::new(
+-        NonZero::new(state.channels).unwrap(),
++    // rodio's channel converter keeps only the first channel; average them
++    // so a source panned to one side (e.g. right-only VB-Cable) is not lost.
++    let mono_samples: Vec<f32> = state
++        .input_samples
++        .chunks(state.channels as usize)
++        .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
++        .collect();
++
++    let input_buffer = rodio::buffer::SamplesBuffer::new(
++        nz!(1),
+         NonZero::new(state.sample_rate).unwrap(),
+-        state.input_samples,
++        mono_samples,
+     );
+ 
+     let converted_file =

@@ -39,6 +39,26 @@ cargo install songrec --no-default-features --features ffmpeg
 
 Windows の場合は [Windows で使う](#windows-で使う) を参照してください。
 
+### songrec のパッチ
+
+songrec 0.7.4 は、ステレオの入力をモノラルにするとき左チャンネルだけを使います。そのため、
+音を流しているアプリが右チャンネルにしか出力していないと、songrec は入力を無音として扱います。
+エラーは出ず、ziti からは何も認識されないように見えます。
+
+`patches/songrec-0.7.4-downmix.patch` は、左右を平均してからモノラルにするパッチです。
+左右に同じ音がある入力や普通のステレオ、1ch のマイクでもそのまま動きます。
+
+```sh
+curl -sL https://static.crates.io/crates/songrec/songrec-0.7.4.crate | tar xz
+cd songrec-0.7.4
+patch -p1 < <ziti のチェックアウト>/patches/songrec-0.7.4-downmix.patch
+cargo install --locked --path . --no-default-features --features ffmpeg
+```
+
+- このパッチは songrec 0.7.4 用です。
+- `cargo install songrec` を実行し直すと、パッチなしの版で上書きされます。
+- [Docker](#docker推奨) のイメージは、ビルドのときにこのパッチを自動で当てます。
+
 ## ビルド
 
 ```sh
@@ -155,7 +175,8 @@ MSYS2 の UCRT64 環境は SongRec 本家の公式 Windows 手順で、songrec �
              mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-ffmpeg
    ```
 
-3. songrec をインストールします（CLI のみ・GUI なし）。
+3. songrec をインストールします（CLI のみ・GUI なし）。片方のチャンネルにしか音がない入力を使うときは、
+   [songrec のパッチ](#songrec-のパッチ) を当てた版を入れてください。
 
    ```sh
    cargo install songrec --no-default-features --features ffmpeg
