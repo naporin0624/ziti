@@ -13,11 +13,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2-dev \
         libpipewire-0.3-dev \
         libpulse-dev \
+        curl \
+        patch \
     && rm -rf /var/lib/apt/lists/*
 
 # songrec first so ziti source changes don't invalidate this slow layer.
 # "pulse" lets songrec follow the default PulseAudio source (WSLg's RDPSource).
-RUN cargo install songrec --no-default-features --features pulse
+# The patch averages channels on downmix; upstream keeps only the left one.
+ARG SONGREC_VERSION=0.7.4
+COPY patches/songrec-${SONGREC_VERSION}-downmix.patch /tmp/songrec-downmix.patch
+RUN curl -fsSL "https://static.crates.io/crates/songrec/songrec-${SONGREC_VERSION}.crate" \
+        | tar xz -C /tmp \
+    && cd "/tmp/songrec-${SONGREC_VERSION}" \
+    && patch -p1 < /tmp/songrec-downmix.patch \
+    && cargo install --locked --path . --no-default-features --features pulse \
+    && rm -rf "/tmp/songrec-${SONGREC_VERSION}" /tmp/songrec-downmix.patch
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./

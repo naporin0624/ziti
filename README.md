@@ -44,6 +44,26 @@ cargo install songrec --no-default-features --features ffmpeg
 
 On Windows, see [Using on Windows](#using-on-windows).
 
+### Patching songrec
+
+songrec 0.7.4 keeps only the left channel when it downmixes stereo input to mono. If the app
+feeding the device outputs to the right channel only, songrec treats the input as silence: it
+reports no error, and ziti simply never recognizes anything.
+
+`patches/songrec-0.7.4-downmix.patch` makes songrec average the channels before downmixing. It
+works the same for input with identical channels, ordinary stereo, and 1-channel microphones.
+
+```sh
+curl -sL https://static.crates.io/crates/songrec/songrec-0.7.4.crate | tar xz
+cd songrec-0.7.4
+patch -p1 < <path to your ziti checkout>/patches/songrec-0.7.4-downmix.patch
+cargo install --locked --path . --no-default-features --features ffmpeg
+```
+
+- The patch targets songrec 0.7.4.
+- Running `cargo install songrec` again overwrites it with the unpatched build.
+- The [Docker](#docker-recommended) image applies this patch automatically at build time.
+
 ## Build
 
 ```sh
@@ -160,7 +180,8 @@ provides all the native libraries songrec needs.
              mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-ffmpeg
    ```
 
-3. Install songrec (CLI only, no GUI):
+3. Install songrec (CLI only, no GUI). If your input carries sound on one channel only, install
+   the build from [Patching songrec](#patching-songrec) instead:
 
    ```sh
    cargo install songrec --no-default-features --features ffmpeg
